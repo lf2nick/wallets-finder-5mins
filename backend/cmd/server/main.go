@@ -12,11 +12,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/lf2nick/wallets-finder-5mins/backend/internal/api"
 	"github.com/lf2nick/wallets-finder-5mins/backend/internal/db"
+	"github.com/lf2nick/wallets-finder-5mins/backend/internal/scanner"
 )
 
 func main() {
@@ -32,7 +34,8 @@ func main() {
 		log.Fatalf("[wf5m] migration 失敗: %v", err)
 	}
 
-	srv := api.NewServer(database, cfg.DashboardToken)
+	scn := scanner.New(database)
+	srv := api.NewServer(database, scn, cfg.DashboardToken)
 
 	ctx, cancel := signalContext()
 	defer cancel()
@@ -43,21 +46,69 @@ func main() {
 		}
 	}()
 
+	// 自動 scan ticker（預設 0 = off，避免跟 poly-tracker 過渡期同時跑）
+	if cfg.AutoScanHours > 0 {
+		go runAutoScanTicker(ctx, scn, cfg.AutoScanHours)
+	} else {
+		log.Printf("[wf5m] auto-scan 未啟用（WF5M_AUTO_SCAN_HOURS=0）— 只能手動觸發 /api/cryptofinder/scan")
+	}
+
 	<-ctx.Done()
 	log.Printf("[wf5m] 收到 shutdown signal, 等 3s 收尾...")
 	time.Sleep(3 * time.Second)
+}
+
+// runAutoScanTicker 每 N 小時自動 trigger 一次 scan。
+// 過渡期建議設 0（off）；確認 poly-tracker 那邊的 auto 拔掉後再開。
+func runAutoScanTicker(ctx context.Context, scn *scanner.Scanner, hours int) {
+	interval := time.Duration(hours) * time.Hour
+	log.Printf("[wf5m] auto-scan 已啟用：每 %v 跑一次 cryptofinder", interval)
+	// 啟動延遲 5 分鐘（避免 deploy 完馬上跑、跟手動 scan 撞）
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(5 * time.Minute):
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	doScan := func() {
+		if scn.IsRunning() {
+			log.Printf("[wf5m] auto-scan tick 跳過：上一輪還在跑")
+			return
+		}
+		log.Printf("[wf5m] auto-scan tick 啟動")
+		scanCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+		seed, cand, err := scn.Scan(scanCtx, 14, 30) // 預設參數，跟 poly-tracker 一致
+		cancel()
+		if err != nil {
+			log.Printf("[wf5m] auto-scan 失敗: %v", err)
+			return
+		}
+		log.Printf("[wf5m] auto-scan 完成 seed=%d cand=%d", seed, cand)
+	}
+	doScan() // 啟動延遲後第一次跑
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			doScan()
+		}
+	}
 }
 
 type config struct {
 	DBDSN          string
 	HTTPAddr       string
 	DashboardToken string
+	AutoScanHours  int // 0 = off
 }
 
 func loadConfig() config {
 	c := config{
 		HTTPAddr:       envOr("HTTP_ADDR", ":8080"),
 		DashboardToken: os.Getenv("DASHBOARD_TOKEN"),
+		AutoScanHours:  parseEnvInt("WF5M_AUTO_SCAN_HOURS", 0),
 	}
 	host := envOr("DB_HOST", "localhost")
 	port := envOr("DB_PORT", "5432")
@@ -78,6 +129,18 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func parseEnvInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 func signalContext() (context.Context, context.CancelFunc) {

@@ -13,15 +13,17 @@ import (
 	"time"
 
 	"github.com/lf2nick/wallets-finder-5mins/backend/internal/db"
+	"github.com/lf2nick/wallets-finder-5mins/backend/internal/scanner"
 )
 
 type Server struct {
 	db             *db.DB
+	scanner        *scanner.Scanner
 	dashboardToken string
 }
 
-func NewServer(database *db.DB, token string) *Server {
-	return &Server{db: database, dashboardToken: token}
+func NewServer(database *db.DB, scn *scanner.Scanner, token string) *Server {
+	return &Server{db: database, scanner: scn, dashboardToken: token}
 }
 
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
@@ -39,6 +41,10 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	mux.HandleFunc("/api/history/wallet", s.auth(s.handleHistoryWallet))            // ?address=0x...
 
 	mux.HandleFunc("/api/observe", s.auth(s.handleObserve)) // POST {address, alias}
+
+	// cryptofinder scan（從 poly-tracker 搬過來，現在 wf5m 是寫入 owner）
+	mux.HandleFunc("/api/cryptofinder/scan", s.auth(s.handleCryptofinderScan))   // POST ?days=14&min_trades=30
+	mux.HandleFunc("/api/cryptofinder/status", s.auth(s.handleCryptofinderStatus)) // GET
 
 	srv := &http.Server{
 		Addr:              addr,

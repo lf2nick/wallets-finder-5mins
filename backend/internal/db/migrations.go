@@ -61,7 +61,12 @@ func (db *DB) Migrate(ctx context.Context) error {
 			return fmt.Errorf("seed config %s: %w", c.key, err)
 		}
 	}
-	log.Printf("[wf5m] migration ok — wf5m_* tables ready")
+	// cryptofinder 相關表 (crypto_wallet_candidates + crypto_finder_runs)
+	// 跟 poly-tracker 共用同一張 schema；過渡期兩邊都跑 IF NOT EXISTS migration 安全。
+	if err := db.MigrateCryptoFinder(ctx); err != nil {
+		return fmt.Errorf("cryptofinder migration: %w", err)
+	}
+	log.Printf("[wf5m] migration ok — wf5m_* tables + crypto_wallet_candidates ready")
 	return nil
 }
 

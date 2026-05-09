@@ -5,6 +5,7 @@ import { PasswordGate } from "./components/PasswordGate";
 import { FilterPanel, FilterValues } from "./components/FilterPanel";
 import { CandidatesTable } from "./components/CandidatesTable";
 import { HistoryPanel } from "./components/HistoryPanel";
+import { ScanPanel } from "./components/ScanPanel";
 
 type SortKey =
   | "net_pnl_usd"
@@ -118,6 +119,11 @@ export default function App() {
       </h1>
 
       <FilterPanel initial={filter} onSave={saveConfig} onScan={runScan} busy={busy} />
+      <ScanPanel
+        token={getToken() || ""}
+        onScanComplete={() => refresh()}
+        toast={showToast}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 14 }}>
         <CandidatesTable
