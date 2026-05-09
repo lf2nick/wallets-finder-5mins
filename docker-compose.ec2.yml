@@ -1,0 +1,25 @@
+# EC2 override（疊在 docker-compose.yml 上）
+#
+# 跟 poly-tracker 一樣加入 crypto-predictor_default 網路，
+# 用 service 名稱 crypto-db 直連 postgres :5432。
+#
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.ec2.yml up -d --build
+
+services:
+  wf5m-backend:
+    environment:
+      DB_HOST: crypto-db
+      DB_PORT: "5432"
+    networks:
+      - default
+      - crypto-shared
+
+  wf5m-frontend:
+    networks:
+      - default
+
+networks:
+  crypto-shared:
+    name: crypto-predictor_default
+    external: true

@@ -1,0 +1,23 @@
+# env
+.env
+.env.local
+
+# Go
+backend/server
+backend/*.exe
+
+# node / vite
+frontend/node_modules
+frontend/dist
+frontend/.vite
+frontend/tsconfig.tsbuildinfo
+frontend/*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.idea/
+.vscode/
+*.swp
