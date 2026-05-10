@@ -41,7 +41,9 @@ const (
 	httpTimeout      = 15 * time.Second
 
 	// Phase 2：每個 wallet 抓多少筆 activity（API 上限通常 500）
-	activityLimit = 500
+	activityLimit       = 500
+	tradePageLimit      = 500
+	tradePagesPerMarket = 3
 
 	// 我們實際願意跟單的價格帶；市場級 EV 統計只看這段，避免高勝率被高買價吃掉。
 	followPriceBandMin = 0.30
@@ -258,27 +260,33 @@ func (s *Scanner) fetchMarketWallets(ctx context.Context, slug string) []string 
 	}
 	conditionID := events[0].Markets[0].ConditionID
 
-	url2 := fmt.Sprintf("%s/trades?market=%s&limit=500", dataAPI, conditionID)
-	req2, _ := http.NewRequestWithContext(ctx, http.MethodGet, url2, nil)
-	resp2, err := s.httpClient.Do(req2)
-	if err != nil {
-		return nil
-	}
-	body2, _ := io.ReadAll(resp2.Body)
-	resp2.Body.Close()
-	if resp2.StatusCode != 200 {
-		return nil
-	}
-	var trades []struct {
-		ProxyWallet string `json:"proxyWallet"`
-	}
-	if err := json.Unmarshal(body2, &trades); err != nil {
-		return nil
-	}
-	out := make([]string, 0, len(trades))
-	for _, t := range trades {
-		if t.ProxyWallet != "" {
-			out = append(out, t.ProxyWallet)
+	out := make([]string, 0, tradePageLimit)
+	for page := 0; page < tradePagesPerMarket; page++ {
+		offset := page * tradePageLimit
+		url2 := fmt.Sprintf("%s/trades?market=%s&limit=%d&offset=%d", dataAPI, conditionID, tradePageLimit, offset)
+		req2, _ := http.NewRequestWithContext(ctx, http.MethodGet, url2, nil)
+		resp2, err := s.httpClient.Do(req2)
+		if err != nil {
+			break
+		}
+		body2, _ := io.ReadAll(resp2.Body)
+		resp2.Body.Close()
+		if resp2.StatusCode != 200 {
+			break
+		}
+		var trades []struct {
+			ProxyWallet string `json:"proxyWallet"`
+		}
+		if err := json.Unmarshal(body2, &trades); err != nil {
+			break
+		}
+		for _, t := range trades {
+			if t.ProxyWallet != "" {
+				out = append(out, t.ProxyWallet)
+			}
+		}
+		if len(trades) < tradePageLimit {
+			break
 		}
 	}
 	return out
