@@ -55,6 +55,14 @@ type Candidate struct {
 	BestBucketWinRateWilson float64 `json:"best_bucket_win_rate_wilson"`
 	BestBucketROIPct        float64 `json:"best_bucket_roi_pct"`
 	BucketSummary           string  `json:"bucket_summary"`
+	FirstBuyMarketCount     int     `json:"first_buy_market_count"`
+	FirstBuyWinCount        int     `json:"first_buy_win_count"`
+	FirstBuyLossCount       int     `json:"first_buy_loss_count"`
+	FirstBuyWinRate         float64 `json:"first_buy_win_rate"`
+	FirstBuyWinRateWilson   float64 `json:"first_buy_win_rate_wilson"`
+	FirstBuyROIPct          float64 `json:"first_buy_roi_pct"`
+	FirstBuyNetPnLUSD       float64 `json:"first_buy_net_pnl_usd"`
+	FirstBuyVolumeUSD       float64 `json:"first_buy_volume_usd"`
 
 	LastTradeAt     time.Time `json:"last_trade_at,omitempty"`
 	EvaluatedAt     time.Time `json:"evaluated_at"`
@@ -77,6 +85,8 @@ type CandidateFilter struct {
 	PriceBandRatioMinPct float64
 	CopyableBucketsMin   int
 	CopyableROIMinPct    float64
+	FirstBuyMarketsMin   int
+	FirstBuyROIMinPct    float64
 	SortBy               string
 	Limit                int
 }
@@ -92,7 +102,9 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 		"price_band_win_rate", "price_band_win_rate_wilson", "price_band_roi_pct",
 		"avg_buy_price", "extreme_price_ratio", "copyable_bucket_count",
 		"copyable_market_count", "copyable_win_rate", "copyable_win_rate_wilson",
-		"copyable_roi_pct", "copyable_net_pnl_usd", "best_bucket_roi_pct":
+		"copyable_roi_pct", "copyable_net_pnl_usd", "best_bucket_roi_pct",
+		"first_buy_market_count", "first_buy_win_rate", "first_buy_win_rate_wilson",
+		"first_buy_roi_pct", "first_buy_net_pnl_usd":
 		sortExpr = "c." + f.SortBy
 	case "price_band_market_ratio":
 		sortExpr = priceBandRatioExpr
@@ -130,6 +142,9 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 		       c.best_bucket_label, c.best_bucket_market_count,
 		       c.best_bucket_win_rate_wilson, c.best_bucket_roi_pct,
 		       c.bucket_summary,
+		       c.first_buy_market_count, c.first_buy_win_count, c.first_buy_loss_count,
+		       c.first_buy_win_rate, c.first_buy_win_rate_wilson,
+		       c.first_buy_roi_pct, c.first_buy_net_pnl_usd, c.first_buy_volume_usd,
 		       c.last_trade_at, c.evaluated_at,
 		       (s.address IS NOT NULL) AS already_observed
 		FROM crypto_wallet_candidates c
@@ -148,8 +163,10 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 		  AND %s                        >= $12
 		  AND c.copyable_bucket_count   >= $13
 		  AND c.copyable_roi_pct        >= $14
+		  AND c.first_buy_market_count  >= $15
+		  AND c.first_buy_roi_pct       >= $16
 		ORDER BY %s DESC
-		LIMIT $15
+		LIMIT $17
 	`, priceBandRatioExpr, priceBandRatioExpr, sortExpr)
 
 	rows, err := db.sql.QueryContext(ctx, q,
@@ -157,7 +174,8 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 		f.SettledMarketsMin, f.MarketW95MinPct, f.NoReduceMinPct,
 		f.PriceBandMarketsMin, f.PriceBandROIMinPct,
 		avgBuyPriceMax, extremePriceMaxPct, f.PriceBandRatioMinPct,
-		f.CopyableBucketsMin, f.CopyableROIMinPct, limit)
+		f.CopyableBucketsMin, f.CopyableROIMinPct,
+		f.FirstBuyMarketsMin, f.FirstBuyROIMinPct, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query candidates: %w", err)
 	}
@@ -186,6 +204,9 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 			&c.BestBucketLabel, &c.BestBucketMarketCount,
 			&c.BestBucketWinRateWilson, &c.BestBucketROIPct,
 			&c.BucketSummary,
+			&c.FirstBuyMarketCount, &c.FirstBuyWinCount, &c.FirstBuyLossCount,
+			&c.FirstBuyWinRate, &c.FirstBuyWinRateWilson,
+			&c.FirstBuyROIPct, &c.FirstBuyNetPnLUSD, &c.FirstBuyVolumeUSD,
 			&lt, &c.EvaluatedAt, &c.AlreadyObserved); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}

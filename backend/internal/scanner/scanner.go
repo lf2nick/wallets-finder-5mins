@@ -487,6 +487,12 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 		buyShares24h     map[string]float64
 		buyUSDC24h       float64
 		buyTradeCount24h int
+		firstBuySet      bool
+		firstBuyTs       int64
+		firstBuyOutcome  string
+		firstBuyPrice    float64
+		firstBuySize     float64
+		firstBuyUSDC     float64
 	}
 	positions := map[string]*pos{}
 
@@ -585,6 +591,14 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 					if a.Price >= 0.85 || a.Price <= 0.15 {
 						extremeBuyCount++
 					}
+					if !p.firstBuySet || a.Timestamp < p.firstBuyTs {
+						p.firstBuySet = true
+						p.firstBuyTs = a.Timestamp
+						p.firstBuyOutcome = a.Outcome
+						p.firstBuyPrice = a.Price
+						p.firstBuySize = a.Size
+						p.firstBuyUSDC = a.UsdcSize
+					}
 				}
 				if p.closeTs > 0 {
 					marketStart := p.closeTs - 300
@@ -664,6 +678,8 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 	var noReduceCount, reduceBeforeSettleCount int
 	var priceBandMarketCount, priceBandWinCount, priceBandLossCount int
 	var priceBandVolumeUSD, priceBandNetPnLUSD float64
+	var firstBuyMarketCount, firstBuyWinCount, firstBuyLossCount int
+	var firstBuyVolumeUSD, firstBuyNetPnLUSD float64
 	bucketStats := make(map[string]*priceBucketStats)
 	closedList := make([]closedPos, 0)
 
@@ -746,6 +762,20 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 					} else {
 						bs.LossCount++
 					}
+				}
+			}
+		}
+		if p.firstBuySet && p.firstBuyPrice >= followPriceBandMin && p.firstBuyPrice <= followPriceBandMax {
+			if price, ok := res.OutcomePrices[p.firstBuyOutcome]; ok {
+				firstBuyIncome := p.firstBuySize * price
+				firstBuyPnL := firstBuyIncome - p.firstBuyUSDC
+				firstBuyMarketCount++
+				firstBuyVolumeUSD += p.firstBuyUSDC
+				firstBuyNetPnLUSD += firstBuyPnL
+				if firstBuyIncome >= p.firstBuyUSDC {
+					firstBuyWinCount++
+				} else {
+					firstBuyLossCount++
 				}
 			}
 		}
@@ -928,6 +958,15 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 	if copyableVolumeUSD > 0 {
 		copyableROIPct = copyableNetPnLUSD / copyableVolumeUSD * 100
 	}
+	firstBuyWinRate := 0.0
+	if settled := firstBuyWinCount + firstBuyLossCount; settled > 0 {
+		firstBuyWinRate = float64(firstBuyWinCount) / float64(settled) * 100
+	}
+	firstBuyWinRateWilson := db.WilsonLowerBound95(firstBuyWinCount, firstBuyWinCount+firstBuyLossCount)
+	firstBuyROIPct := 0.0
+	if firstBuyVolumeUSD > 0 {
+		firstBuyROIPct = firstBuyNetPnLUSD / firstBuyVolumeUSD * 100
+	}
 	bucketSummaryJSON := ""
 	if len(bucketSummary) > 0 {
 		if b, err := json.Marshal(bucketSummary); err == nil {
@@ -1009,6 +1048,14 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 		BestBucketWinRateWilson: bestBucketWinRateWilson,
 		BestBucketROIPct:        bestBucketROIPct,
 		BucketSummary:           bucketSummaryJSON,
+		FirstBuyMarketCount:     firstBuyMarketCount,
+		FirstBuyWinCount:        firstBuyWinCount,
+		FirstBuyLossCount:       firstBuyLossCount,
+		FirstBuyWinRate:         firstBuyWinRate,
+		FirstBuyWinRateWilson:   firstBuyWinRateWilson,
+		FirstBuyROIPct:          firstBuyROIPct,
+		FirstBuyNetPnLUSD:       firstBuyNetPnLUSD,
+		FirstBuyVolumeUSD:       firstBuyVolumeUSD,
 	}, true
 }
 

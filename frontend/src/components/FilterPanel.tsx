@@ -15,6 +15,8 @@ export type FilterValues = {
   price_band_market_ratio_min: number;
   copyable_buckets_min: number;
   copyable_roi_min: number;
+  first_buy_markets_min: number;
+  first_buy_roi_min: number;
 };
 
 const FIELDS: {
@@ -133,6 +135,22 @@ const FIELDS: {
     key: "copyable_roi_min",
     label: "可跟 ROI %",
     tip: "只統計可跟價格帶的合計 ROI；用來找真正符合跟單價格規則的錢包。",
+    min: -1000,
+    max: 1000,
+    step: 0.1,
+  },
+  {
+    key: "first_buy_markets_min",
+    label: "首買市場",
+    tip: "只看每個市場最早的第一筆 BUY，且第一筆價格要在 0.3~0.7。",
+    min: 0,
+    max: 10000,
+    step: 1,
+  },
+  {
+    key: "first_buy_roi_min",
+    label: "首買 ROI %",
+    tip: "只跟第一筆 BUY 並持有到結算的 ROI；用來排除靠後續加倉才變好的錢包。",
     min: -1000,
     max: 1000,
     step: 0.1,

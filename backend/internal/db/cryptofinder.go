@@ -83,6 +83,14 @@ type CryptoWalletCandidate struct {
 	BestBucketWinRateWilson float64
 	BestBucketROIPct        float64
 	BucketSummary           string
+	FirstBuyMarketCount     int
+	FirstBuyWinCount        int
+	FirstBuyLossCount       int
+	FirstBuyWinRate         float64
+	FirstBuyWinRateWilson   float64
+	FirstBuyROIPct          float64
+	FirstBuyNetPnLUSD       float64
+	FirstBuyVolumeUSD       float64
 }
 
 // MigrateCryptoFinder 建 crypto_wallet_candidates + crypto_finder_runs。
@@ -155,6 +163,14 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 		`best_bucket_win_rate_wilson FLOAT NOT NULL DEFAULT 0`,
 		`best_bucket_roi_pct FLOAT NOT NULL DEFAULT 0`,
 		`bucket_summary TEXT NOT NULL DEFAULT ''`,
+		`first_buy_market_count INT NOT NULL DEFAULT 0`,
+		`first_buy_win_count INT NOT NULL DEFAULT 0`,
+		`first_buy_loss_count INT NOT NULL DEFAULT 0`,
+		`first_buy_win_rate FLOAT NOT NULL DEFAULT 0`,
+		`first_buy_win_rate_wilson FLOAT NOT NULL DEFAULT 0`,
+		`first_buy_roi_pct FLOAT NOT NULL DEFAULT 0`,
+		`first_buy_net_pnl_usd FLOAT NOT NULL DEFAULT 0`,
+		`first_buy_volume_usd FLOAT NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.sql.ExecContext(ctx,
 			`ALTER TABLE crypto_wallet_candidates ADD COLUMN IF NOT EXISTS `+col); err != nil {
@@ -176,6 +192,10 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 	if _, err := db.sql.ExecContext(ctx,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_candidates_copyable_roi ON crypto_wallet_candidates (copyable_roi_pct DESC)`); err != nil {
 		return fmt.Errorf("index copyable roi: %w", err)
+	}
+	if _, err := db.sql.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_candidates_first_buy_roi ON crypto_wallet_candidates (first_buy_roi_pct DESC)`); err != nil {
+		return fmt.Errorf("index first buy roi: %w", err)
 	}
 	if _, err := db.sql.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS crypto_finder_runs (
@@ -218,7 +238,9 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 		   price_band_win_rate_wilson, price_band_roi_pct, price_band_net_pnl_usd, price_band_volume_usd,
 		   copyable_bucket_count, copyable_market_count, copyable_win_rate, copyable_win_rate_wilson,
 		   copyable_roi_pct, copyable_net_pnl_usd, best_bucket_label, best_bucket_market_count,
-		   best_bucket_win_rate_wilson, best_bucket_roi_pct, bucket_summary)
+		   best_bucket_win_rate_wilson, best_bucket_roi_pct, bucket_summary,
+		   first_buy_market_count, first_buy_win_count, first_buy_loss_count, first_buy_win_rate,
+		   first_buy_win_rate_wilson, first_buy_roi_pct, first_buy_net_pnl_usd, first_buy_volume_usd)
 		VALUES (LOWER($1), $2, $3, $4, $5, $6, $7, $8, $9, NOW(),
 		        $10, $11, $12, $13, $14, $15, $16,
 		        $17, $18, $19, $20, $21, $22, $23,
@@ -227,7 +249,8 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 		        $34, $35, $36, $37,
 		        $38, $39, $40, $41,
 		        $42, $43, $44, $45,
-		        $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56)
+		        $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56,
+		        $57, $58, $59, $60, $61, $62, $63, $64)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
@@ -261,6 +284,9 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 			it.BestBucketLabel, it.BestBucketMarketCount,
 			it.BestBucketWinRateWilson, it.BestBucketROIPct,
 			it.BucketSummary,
+			it.FirstBuyMarketCount, it.FirstBuyWinCount, it.FirstBuyLossCount,
+			it.FirstBuyWinRate, it.FirstBuyWinRateWilson,
+			it.FirstBuyROIPct, it.FirstBuyNetPnLUSD, it.FirstBuyVolumeUSD,
 		); err != nil {
 			return fmt.Errorf("insert %s: %w", it.Address, err)
 		}

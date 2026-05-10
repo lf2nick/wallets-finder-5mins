@@ -24,7 +24,11 @@ type SortKey =
   | "copyable_win_rate_wilson"
   | "copyable_roi_pct"
   | "copyable_net_pnl_usd"
-  | "best_bucket_roi_pct";
+  | "best_bucket_roi_pct"
+  | "first_buy_market_count"
+  | "first_buy_win_rate_wilson"
+  | "first_buy_roi_pct"
+  | "first_buy_net_pnl_usd";
 
 type Props = {
   items: Candidate[];
@@ -48,6 +52,9 @@ const COLS: { key: SortKey; label: string; tip?: string; fmt: (c: Candidate) => 
   { key: "copyable_win_rate_wilson", label: "可跟W95", tip: "只看可跟價格帶的 Wilson 95% 下界。", fmt: (c) => fmtPct(c.copyable_win_rate_wilson, 1) },
   { key: "copyable_roi_pct", label: "可跟ROI", tip: "只看可跟價格帶的合計 ROI。", fmt: (c) => fmtPct(c.copyable_roi_pct, 1) },
   { key: "best_bucket_roi_pct", label: "最佳帶", tip: "ROI 最高的可跟價格帶。", fmt: (c) => c.best_bucket_label ? `${c.best_bucket_label} ${fmtPct(c.best_bucket_roi_pct, 0)}` : "-" },
+  { key: "first_buy_market_count", label: "首買市場", tip: "第一筆 BUY 在 0.3~0.7 的已結算市場數。", fmt: (c) => String(c.first_buy_market_count) },
+  { key: "first_buy_win_rate_wilson", label: "首買W95", tip: "只跟每個市場第一筆 BUY 的 Wilson 95% 下界。", fmt: (c) => fmtPct(c.first_buy_win_rate_wilson, 1) },
+  { key: "first_buy_roi_pct", label: "首買ROI", tip: "只跟每個市場第一筆 BUY 並 hold 到結算的 ROI。", fmt: (c) => fmtPct(c.first_buy_roi_pct, 1) },
   { key: "avg_buy_price", label: "均價", tip: "全部 BUY 的加權平均價格。", fmt: (c) => c.avg_buy_price.toFixed(3) },
   { key: "extreme_price_ratio", label: "極端價", tip: "BUY 價格 <=0.15 或 >=0.85 的交易占比。", fmt: (c) => fmtPct(c.extreme_price_ratio, 0) },
   { key: "no_reduce_ratio", label: "不減倉", tip: "結算前沒有 SELL/減倉的市場比例。", fmt: (c) => fmtPct(c.no_reduce_ratio, 0) },

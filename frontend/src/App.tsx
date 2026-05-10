@@ -30,7 +30,11 @@ type SortKey =
   | "copyable_win_rate_wilson"
   | "copyable_roi_pct"
   | "copyable_net_pnl_usd"
-  | "best_bucket_roi_pct";
+  | "best_bucket_roi_pct"
+  | "first_buy_market_count"
+  | "first_buy_win_rate_wilson"
+  | "first_buy_roi_pct"
+  | "first_buy_net_pnl_usd";
 
 type Toast = { msg: string; kind: "success" | "error"; id: number } | null;
 
@@ -72,6 +76,8 @@ export default function App() {
         price_band_market_ratio_min: cfg.price_band_market_ratio_min ?? 60,
         copyable_buckets_min: cfg.copyable_buckets_min ?? 0,
         copyable_roi_min: cfg.copyable_roi_min ?? 0,
+        first_buy_markets_min: cfg.first_buy_markets_min ?? 0,
+        first_buy_roi_min: cfg.first_buy_roi_min ?? 0,
       };
       setFilter(fv);
       const d = await api.getCandidates({ sort: sortBy });

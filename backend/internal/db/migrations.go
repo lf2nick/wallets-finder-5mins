@@ -93,5 +93,7 @@ func defaultConfig() []defaultCfg {
 		{"price_band_market_ratio_min", 60},
 		{"copyable_buckets_min", 0},
 		{"copyable_roi_min", 0},
+		{"first_buy_markets_min", 0},
+		{"first_buy_roi_min", 0},
 	}
 }

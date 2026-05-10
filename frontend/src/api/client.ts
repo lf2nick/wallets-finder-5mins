@@ -152,6 +152,14 @@ export type Candidate = {
   best_bucket_win_rate_wilson: number;
   best_bucket_roi_pct: number;
   bucket_summary: string;
+  first_buy_market_count: number;
+  first_buy_win_count: number;
+  first_buy_loss_count: number;
+  first_buy_win_rate: number;
+  first_buy_win_rate_wilson: number;
+  first_buy_roi_pct: number;
+  first_buy_net_pnl_usd: number;
+  first_buy_volume_usd: number;
   last_trade_at?: string;
   evaluated_at: string;
   already_observed: boolean;
@@ -172,6 +180,8 @@ export type Filter = {
   PriceBandRatioMinPct: number;
   CopyableBucketsMin: number;
   CopyableROIMinPct: number;
+  FirstBuyMarketsMin: number;
+  FirstBuyROIMinPct: number;
   SortBy: string;
   Limit: number;
 };
