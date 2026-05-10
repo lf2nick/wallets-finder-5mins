@@ -20,8 +20,11 @@ type SortKey =
   | "no_reduce_ratio"
   | "add_market_ratio"
   | "price_band_market_count"
+  | "price_band_market_ratio"
   | "price_band_win_rate_wilson"
-  | "price_band_roi_pct";
+  | "price_band_roi_pct"
+  | "avg_buy_price"
+  | "extreme_price_ratio";
 
 type Toast = { msg: string; kind: "success" | "error"; id: number } | null;
 
@@ -58,6 +61,9 @@ export default function App() {
         no_reduce_ratio_min: cfg.no_reduce_ratio_min ?? 95,
         price_band_markets_min: cfg.price_band_markets_min ?? 30,
         price_band_roi_min: cfg.price_band_roi_min ?? 0,
+        avg_buy_price_max: cfg.avg_buy_price_max ?? 0.75,
+        extreme_price_ratio_max: cfg.extreme_price_ratio_max ?? 20,
+        price_band_market_ratio_min: cfg.price_band_market_ratio_min ?? 60,
       };
       setFilter(fv);
       const d = await api.getCandidates({ sort: sortBy });

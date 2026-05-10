@@ -121,6 +121,8 @@ export type Candidate = {
   avg_buy_offset_sec: number;
   profit_loss_ratio: number;
   wash_ratio: number;
+  avg_buy_price: number;
+  extreme_price_ratio: number;
   settled_market_count: number;
   market_win_count: number;
   market_loss_count: number;
@@ -138,6 +140,7 @@ export type Candidate = {
   price_band_roi_pct: number;
   price_band_net_pnl_usd: number;
   price_band_volume_usd: number;
+  price_band_market_ratio: number;
   last_trade_at?: string;
   evaluated_at: string;
   already_observed: boolean;
@@ -153,6 +156,9 @@ export type Filter = {
   NoReduceMinPct: number;
   PriceBandMarketsMin: number;
   PriceBandROIMinPct: number;
+  AvgBuyPriceMax: number;
+  ExtremePriceMaxPct: number;
+  PriceBandRatioMinPct: number;
   SortBy: string;
   Limit: number;
 };

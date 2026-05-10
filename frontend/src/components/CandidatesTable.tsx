@@ -14,8 +14,11 @@ type SortKey =
   | "no_reduce_ratio"
   | "add_market_ratio"
   | "price_band_market_count"
+  | "price_band_market_ratio"
   | "price_band_win_rate_wilson"
-  | "price_band_roi_pct";
+  | "price_band_roi_pct"
+  | "avg_buy_price"
+  | "extreme_price_ratio";
 
 type Props = {
   items: Candidate[];
@@ -31,8 +34,11 @@ const COLS: { key: SortKey; label: string; tip?: string; fmt: (c: Candidate) => 
   { key: "market_win_rate_wilson", label: "市場W95", tip: "市場級勝率 Wilson 95% 下界。", fmt: (c) => fmtPct(c.market_win_rate_wilson, 1) },
   { key: "win_rate", label: "交易勝率", tip: "舊口徑：加倉會放大交易勝負次數。", fmt: (c) => fmtPct(c.win_rate, 1) },
   { key: "price_band_market_count", label: "0.3~0.7數", tip: "平均買價落在 0.3~0.7 的已結算市場數。", fmt: (c) => String(c.price_band_market_count) },
+  { key: "price_band_market_ratio", label: "價格帶占比", tip: "0.3~0.7 市場數 / 已結算市場數。", fmt: (c) => fmtPct(c.price_band_market_ratio, 0) },
   { key: "price_band_win_rate_wilson", label: "價格帶W95", tip: "0.3~0.7 價格帶的市場級 W95。", fmt: (c) => fmtPct(c.price_band_win_rate_wilson, 1) },
   { key: "price_band_roi_pct", label: "價格帶ROI", tip: "只看 0.3~0.7 價格帶的 ROI。", fmt: (c) => fmtPct(c.price_band_roi_pct, 1) },
+  { key: "avg_buy_price", label: "均價", tip: "全部 BUY 的加權平均價格。", fmt: (c) => c.avg_buy_price.toFixed(3) },
+  { key: "extreme_price_ratio", label: "極端價", tip: "BUY 價格 <=0.15 或 >=0.85 的交易占比。", fmt: (c) => fmtPct(c.extreme_price_ratio, 0) },
   { key: "no_reduce_ratio", label: "不減倉", tip: "結算前沒有 SELL/減倉的市場比例。", fmt: (c) => fmtPct(c.no_reduce_ratio, 0) },
   { key: "add_market_ratio", label: "加倉", tip: "同市場同方向買超過一次的比例。", fmt: (c) => fmtPct(c.add_market_ratio, 0) },
   { key: "dual_market_ratio", label: "雙向", tip: "同市場同時買 Up 與 Down 的比例。", fmt: (c) => fmtPct(c.dual_market_ratio, 0) },

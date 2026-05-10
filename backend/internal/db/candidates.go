@@ -23,6 +23,8 @@ type Candidate struct {
 	AvgBuyOffsetSec   float64 `json:"avg_buy_offset_sec"`
 	ProfitLossRatio   float64 `json:"profit_loss_ratio"`
 	WashRatio         float64 `json:"wash_ratio"`
+	AvgBuyPrice       float64 `json:"avg_buy_price"`
+	ExtremePriceRatio float64 `json:"extreme_price_ratio"`
 
 	SettledMarketCount      int     `json:"settled_market_count"`
 	MarketWinCount          int     `json:"market_win_count"`
@@ -41,6 +43,7 @@ type Candidate struct {
 	PriceBandROIPct         float64 `json:"price_band_roi_pct"`
 	PriceBandNetPnLUSD      float64 `json:"price_band_net_pnl_usd"`
 	PriceBandVolumeUSD      float64 `json:"price_band_volume_usd"`
+	PriceBandMarketRatio    float64 `json:"price_band_market_ratio"`
 
 	LastTradeAt     time.Time `json:"last_trade_at,omitempty"`
 	EvaluatedAt     time.Time `json:"evaluated_at"`
@@ -49,32 +52,47 @@ type Candidate struct {
 
 // CandidateFilter 是候選查詢的硬條件；零值代表不額外限制。
 type CandidateFilter struct {
-	DualMaxPct          float64
-	CryptoMinPct        float64
-	HoldMinPct          float64
-	MinTrades           int
-	SettledMarketsMin   int
-	MarketW95MinPct     float64
-	NoReduceMinPct      float64
-	PriceBandMarketsMin int
-	PriceBandROIMinPct  float64
-	SortBy              string
-	Limit               int
+	DualMaxPct           float64
+	CryptoMinPct         float64
+	HoldMinPct           float64
+	MinTrades            int
+	SettledMarketsMin    int
+	MarketW95MinPct      float64
+	NoReduceMinPct       float64
+	PriceBandMarketsMin  int
+	PriceBandROIMinPct   float64
+	AvgBuyPriceMax       float64
+	ExtremePriceMaxPct   float64
+	PriceBandRatioMinPct float64
+	SortBy               string
+	Limit                int
 }
 
 // FindCandidates 依照目前 filter 回傳候選錢包，並標記是否已加入 copy_sim_wallets。
 func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidate, error) {
-	sortBy := "net_pnl_usd"
+	priceBandRatioExpr := `CASE WHEN c.settled_market_count > 0 THEN c.price_band_market_count::float / c.settled_market_count * 100 ELSE 0 END`
+	sortExpr := "c.net_pnl_usd"
 	switch f.SortBy {
 	case "win_rate", "roi_pct", "total_trades", "hold_to_settle_ratio",
 		"market_win_rate", "market_win_rate_wilson", "settled_market_count",
 		"no_reduce_ratio", "add_market_ratio", "price_band_market_count",
-		"price_band_win_rate", "price_band_win_rate_wilson", "price_band_roi_pct":
-		sortBy = f.SortBy
+		"price_band_win_rate", "price_band_win_rate_wilson", "price_band_roi_pct",
+		"avg_buy_price", "extreme_price_ratio":
+		sortExpr = "c." + f.SortBy
+	case "price_band_market_ratio":
+		sortExpr = priceBandRatioExpr
 	}
 	limit := f.Limit
 	if limit <= 0 || limit > 5000 {
 		limit = 500
+	}
+	avgBuyPriceMax := f.AvgBuyPriceMax
+	if avgBuyPriceMax <= 0 || avgBuyPriceMax > 1 {
+		avgBuyPriceMax = 1
+	}
+	extremePriceMaxPct := f.ExtremePriceMaxPct
+	if extremePriceMaxPct <= 0 || extremePriceMaxPct > 100 {
+		extremePriceMaxPct = 100
 	}
 
 	q := fmt.Sprintf(`
@@ -82,6 +100,7 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 		       c.win_rate, c.roi_pct, c.net_pnl_usd, c.volume_usd,
 		       c.crypto_ratio, c.dual_market_ratio, c.hold_to_settle_ratio,
 		       c.avg_buy_offset_sec, c.profit_loss_ratio, c.wash_ratio,
+		       c.avg_buy_price, c.extreme_price_ratio,
 		       c.settled_market_count, c.market_win_count, c.market_loss_count,
 		       c.market_win_rate, c.market_win_rate_wilson,
 		       c.no_reduce_ratio, c.reduce_before_settle_ratio,
@@ -89,6 +108,7 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 		       c.price_band_market_count, c.price_band_win_count, c.price_band_loss_count,
 		       c.price_band_win_rate, c.price_band_win_rate_wilson,
 		       c.price_band_roi_pct, c.price_band_net_pnl_usd, c.price_band_volume_usd,
+		       %s AS price_band_market_ratio,
 		       c.last_trade_at, c.evaluated_at,
 		       (s.address IS NOT NULL) AS already_observed
 		FROM crypto_wallet_candidates c
@@ -102,14 +122,18 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 		  AND c.no_reduce_ratio         >= $7
 		  AND c.price_band_market_count >= $8
 		  AND c.price_band_roi_pct      >= $9
-		ORDER BY c.%s DESC
-		LIMIT $10
-	`, sortBy)
+		  AND c.avg_buy_price           <= $10
+		  AND c.extreme_price_ratio     <= $11
+		  AND %s                        >= $12
+		ORDER BY %s DESC
+		LIMIT $13
+	`, priceBandRatioExpr, priceBandRatioExpr, sortExpr)
 
 	rows, err := db.sql.QueryContext(ctx, q,
 		f.DualMaxPct, f.CryptoMinPct, f.HoldMinPct, f.MinTrades,
 		f.SettledMarketsMin, f.MarketW95MinPct, f.NoReduceMinPct,
-		f.PriceBandMarketsMin, f.PriceBandROIMinPct, limit)
+		f.PriceBandMarketsMin, f.PriceBandROIMinPct,
+		avgBuyPriceMax, extremePriceMaxPct, f.PriceBandRatioMinPct, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query candidates: %w", err)
 	}
@@ -123,6 +147,7 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 			&c.WinRate, &c.ROIPct, &c.NetPnLUSD, &c.VolumeUSD,
 			&c.CryptoRatio, &c.DualMarketRatio, &c.HoldToSettleRatio,
 			&c.AvgBuyOffsetSec, &c.ProfitLossRatio, &c.WashRatio,
+			&c.AvgBuyPrice, &c.ExtremePriceRatio,
 			&c.SettledMarketCount, &c.MarketWinCount, &c.MarketLossCount,
 			&c.MarketWinRate, &c.MarketWinRateWilson,
 			&c.NoReduceRatio, &c.ReduceBeforeSettleRatio,
@@ -130,6 +155,7 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 			&c.PriceBandMarketCount, &c.PriceBandWinCount, &c.PriceBandLossCount,
 			&c.PriceBandWinRate, &c.PriceBandWinRateWilson,
 			&c.PriceBandROIPct, &c.PriceBandNetPnLUSD, &c.PriceBandVolumeUSD,
+			&c.PriceBandMarketRatio,
 			&lt, &c.EvaluatedAt, &c.AlreadyObserved); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}

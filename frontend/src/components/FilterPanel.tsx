@@ -10,6 +10,9 @@ export type FilterValues = {
   no_reduce_ratio_min: number;
   price_band_markets_min: number;
   price_band_roi_min: number;
+  avg_buy_price_max: number;
+  extreme_price_ratio_max: number;
+  price_band_market_ratio_min: number;
 };
 
 const FIELDS: {
@@ -91,6 +94,30 @@ const FIELDS: {
     min: -1000,
     max: 1000,
     step: 0.1,
+  },
+  {
+    key: "avg_buy_price_max",
+    label: "均價上限",
+    tip: "整體 BUY 加權平均價格上限，用來排除主要在 0.9 以上追價的錢包。",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "extreme_price_ratio_max",
+    label: "極端價格上限 %",
+    tip: "BUY 價格 <=0.15 或 >=0.85 的交易占比上限，用來排除 0.99 型交易行為。",
+    min: 0,
+    max: 100,
+    step: 1,
+  },
+  {
+    key: "price_band_market_ratio_min",
+    label: "價格帶占比 %",
+    tip: "0.3~0.7 價格帶市場數 / 已結算市場數，避免只偶爾買過合理價格就通過。",
+    min: 0,
+    max: 100,
+    step: 1,
   },
 ];
 

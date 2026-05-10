@@ -88,5 +88,8 @@ func defaultConfig() []defaultCfg {
 		{"no_reduce_ratio_min", 95},
 		{"price_band_markets_min", 30},
 		{"price_band_roi_min", 0},
+		{"avg_buy_price_max", 0.75},
+		{"extreme_price_ratio_max", 20},
+		{"price_band_market_ratio_min", 60},
 	}
 }
