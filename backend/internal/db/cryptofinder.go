@@ -72,6 +72,17 @@ type CryptoWalletCandidate struct {
 	PriceBandROIPct         float64
 	PriceBandNetPnLUSD      float64
 	PriceBandVolumeUSD      float64
+	CopyableBucketCount     int
+	CopyableMarketCount     int
+	CopyableWinRate         float64
+	CopyableWinRateWilson   float64
+	CopyableROIPct          float64
+	CopyableNetPnLUSD       float64
+	BestBucketLabel         string
+	BestBucketMarketCount   int
+	BestBucketWinRateWilson float64
+	BestBucketROIPct        float64
+	BucketSummary           string
 }
 
 // MigrateCryptoFinder 建 crypto_wallet_candidates + crypto_finder_runs。
@@ -133,6 +144,17 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 		`price_band_roi_pct FLOAT NOT NULL DEFAULT 0`,
 		`price_band_net_pnl_usd FLOAT NOT NULL DEFAULT 0`,
 		`price_band_volume_usd FLOAT NOT NULL DEFAULT 0`,
+		`copyable_bucket_count INT NOT NULL DEFAULT 0`,
+		`copyable_market_count INT NOT NULL DEFAULT 0`,
+		`copyable_win_rate FLOAT NOT NULL DEFAULT 0`,
+		`copyable_win_rate_wilson FLOAT NOT NULL DEFAULT 0`,
+		`copyable_roi_pct FLOAT NOT NULL DEFAULT 0`,
+		`copyable_net_pnl_usd FLOAT NOT NULL DEFAULT 0`,
+		`best_bucket_label TEXT NOT NULL DEFAULT ''`,
+		`best_bucket_market_count INT NOT NULL DEFAULT 0`,
+		`best_bucket_win_rate_wilson FLOAT NOT NULL DEFAULT 0`,
+		`best_bucket_roi_pct FLOAT NOT NULL DEFAULT 0`,
+		`bucket_summary TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.sql.ExecContext(ctx,
 			`ALTER TABLE crypto_wallet_candidates ADD COLUMN IF NOT EXISTS `+col); err != nil {
@@ -150,6 +172,10 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 	if _, err := db.sql.ExecContext(ctx,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_candidates_price_band_roi ON crypto_wallet_candidates (price_band_roi_pct DESC)`); err != nil {
 		return fmt.Errorf("index price band roi: %w", err)
+	}
+	if _, err := db.sql.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_candidates_copyable_roi ON crypto_wallet_candidates (copyable_roi_pct DESC)`); err != nil {
+		return fmt.Errorf("index copyable roi: %w", err)
 	}
 	if _, err := db.sql.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS crypto_finder_runs (
@@ -189,7 +215,10 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 		   settled_market_count, market_win_count, market_loss_count, market_win_rate, market_win_rate_wilson,
 		   no_reduce_ratio, reduce_before_settle_ratio, add_market_ratio, avg_adds_per_market,
 		   price_band_market_count, price_band_win_count, price_band_loss_count, price_band_win_rate,
-		   price_band_win_rate_wilson, price_band_roi_pct, price_band_net_pnl_usd, price_band_volume_usd)
+		   price_band_win_rate_wilson, price_band_roi_pct, price_band_net_pnl_usd, price_band_volume_usd,
+		   copyable_bucket_count, copyable_market_count, copyable_win_rate, copyable_win_rate_wilson,
+		   copyable_roi_pct, copyable_net_pnl_usd, best_bucket_label, best_bucket_market_count,
+		   best_bucket_win_rate_wilson, best_bucket_roi_pct, bucket_summary)
 		VALUES (LOWER($1), $2, $3, $4, $5, $6, $7, $8, $9, NOW(),
 		        $10, $11, $12, $13, $14, $15, $16,
 		        $17, $18, $19, $20, $21, $22, $23,
@@ -197,7 +226,8 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 		        $29, $30, $31, $32, $33,
 		        $34, $35, $36, $37,
 		        $38, $39, $40, $41,
-		        $42, $43, $44, $45)
+		        $42, $43, $44, $45,
+		        $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
@@ -225,6 +255,12 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 			it.PriceBandMarketCount, it.PriceBandWinCount, it.PriceBandLossCount,
 			it.PriceBandWinRate, it.PriceBandWinRateWilson,
 			it.PriceBandROIPct, it.PriceBandNetPnLUSD, it.PriceBandVolumeUSD,
+			it.CopyableBucketCount, it.CopyableMarketCount,
+			it.CopyableWinRate, it.CopyableWinRateWilson,
+			it.CopyableROIPct, it.CopyableNetPnLUSD,
+			it.BestBucketLabel, it.BestBucketMarketCount,
+			it.BestBucketWinRateWilson, it.BestBucketROIPct,
+			it.BucketSummary,
 		); err != nil {
 			return fmt.Errorf("insert %s: %w", it.Address, err)
 		}

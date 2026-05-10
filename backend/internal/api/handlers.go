@@ -37,6 +37,8 @@ func (s *Server) handleCandidates(w http.ResponseWriter, r *http.Request) {
 		AvgBuyPriceMax:       parseFloat(q.Get("avg_buy_price_max"), cfg["avg_buy_price_max"]),
 		ExtremePriceMaxPct:   parseFloat(q.Get("extreme_price_ratio_max"), cfg["extreme_price_ratio_max"]),
 		PriceBandRatioMinPct: parseFloat(q.Get("price_band_market_ratio_min"), cfg["price_band_market_ratio_min"]),
+		CopyableBucketsMin:   int(parseFloat(q.Get("copyable_buckets_min"), cfg["copyable_buckets_min"])),
+		CopyableROIMinPct:    parseFloat(q.Get("copyable_roi_min"), cfg["copyable_roi_min"]),
 		SortBy:               q.Get("sort"),
 		Limit:                parseInt(q.Get("limit"), 500),
 	}
@@ -81,7 +83,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		// 簡單 sanity：值必須在合理 [0, 1000] 範圍
 		for k, v := range req.Updates {
 			minValue := 0.0
-			if k == "price_band_roi_min" {
+			if k == "price_band_roi_min" || k == "copyable_roi_min" {
 				minValue = -1000
 			}
 			if v < minValue || v > 1000 {
@@ -126,6 +128,8 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		AvgBuyPriceMax:       cfg["avg_buy_price_max"],
 		ExtremePriceMaxPct:   cfg["extreme_price_ratio_max"],
 		PriceBandRatioMinPct: cfg["price_band_market_ratio_min"],
+		CopyableBucketsMin:   int(cfg["copyable_buckets_min"]),
+		CopyableROIMinPct:    cfg["copyable_roi_min"],
 		SortBy:               "market_win_rate_wilson",
 		Limit:                2000, // snapshot 多抓一點，UI 顯示用 default 500
 	}

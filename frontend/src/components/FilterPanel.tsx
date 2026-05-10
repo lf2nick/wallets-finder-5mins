@@ -13,6 +13,8 @@ export type FilterValues = {
   avg_buy_price_max: number;
   extreme_price_ratio_max: number;
   price_band_market_ratio_min: number;
+  copyable_buckets_min: number;
+  copyable_roi_min: number;
 };
 
 const FIELDS: {
@@ -118,6 +120,22 @@ const FIELDS: {
     min: 0,
     max: 100,
     step: 1,
+  },
+  {
+    key: "copyable_buckets_min",
+    label: "可跟價格帶",
+    tip: "每個價格帶至少 5 個市場且 ROI 為正，才算一個可跟價格帶。",
+    min: 0,
+    max: 6,
+    step: 1,
+  },
+  {
+    key: "copyable_roi_min",
+    label: "可跟 ROI %",
+    tip: "只統計可跟價格帶的合計 ROI；用來找真正符合跟單價格規則的錢包。",
+    min: -1000,
+    max: 1000,
+    step: 0.1,
   },
 ];
 

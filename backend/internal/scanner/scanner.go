@@ -50,6 +50,8 @@ const (
 	// 我們實際願意跟單的價格帶；市場級 EV 統計只看這段，避免高勝率被高買價吃掉。
 	followPriceBandMin = 0.30
 	followPriceBandMax = 0.70
+
+	copyableBucketMinMarkets = 5
 )
 
 // 4 個資產的 slug 前綴
@@ -348,6 +350,46 @@ type activityItem struct {
 	Timestamp   int64   `json:"timestamp"`
 }
 
+type priceBucketDef struct {
+	Label string
+	Min   float64
+	Max   float64
+}
+
+type priceBucketStats struct {
+	Label       string  `json:"label"`
+	MarketCount int     `json:"market_count"`
+	WinCount    int     `json:"win_count"`
+	LossCount   int     `json:"loss_count"`
+	WinRate     float64 `json:"win_rate"`
+	Wilson      float64 `json:"wilson"`
+	ROIPct      float64 `json:"roi_pct"`
+	NetPnLUSD   float64 `json:"net_pnl_usd"`
+	VolumeUSD   float64 `json:"volume_usd"`
+	Copyable    bool    `json:"copyable"`
+}
+
+var copyablePriceBuckets = []priceBucketDef{
+	{Label: "0.30-0.40", Min: 0.30, Max: 0.40},
+	{Label: "0.40-0.50", Min: 0.40, Max: 0.50},
+	{Label: "0.50-0.56", Min: 0.50, Max: 0.56},
+	{Label: "0.56-0.60", Min: 0.56, Max: 0.60},
+	{Label: "0.60-0.65", Min: 0.60, Max: 0.65},
+	{Label: "0.65-0.70", Min: 0.65, Max: 0.70},
+}
+
+func bucketForPrice(price float64) string {
+	for i, b := range copyablePriceBuckets {
+		if price < b.Min || price > b.Max {
+			continue
+		}
+		if price < b.Max || i == len(copyablePriceBuckets)-1 {
+			return b.Label
+		}
+	}
+	return ""
+}
+
 func (s *Scanner) evaluateWallets(ctx context.Context, seeds map[string]struct{}, days int) []db.CryptoWalletCandidate {
 	addrs := make([]string, 0, len(seeds))
 	for a := range seeds {
@@ -622,6 +664,7 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 	var noReduceCount, reduceBeforeSettleCount int
 	var priceBandMarketCount, priceBandWinCount, priceBandLossCount int
 	var priceBandVolumeUSD, priceBandNetPnLUSD float64
+	bucketStats := make(map[string]*priceBucketStats)
 	closedList := make([]closedPos, 0)
 
 	for _, p := range positions {
@@ -688,6 +731,21 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 					priceBandWinCount++
 				} else {
 					priceBandLossCount++
+				}
+				if label := bucketForPrice(avgMarketPrice); label != "" {
+					bs := bucketStats[label]
+					if bs == nil {
+						bs = &priceBucketStats{Label: label}
+						bucketStats[label] = bs
+					}
+					bs.MarketCount++
+					bs.VolumeUSD += p.buyUSDC
+					bs.NetPnLUSD += netPnL
+					if marketWon {
+						bs.WinCount++
+					} else {
+						bs.LossCount++
+					}
 				}
 			}
 		}
@@ -824,6 +882,58 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 	if priceBandVolumeUSD > 0 {
 		priceBandROIPct = priceBandNetPnLUSD / priceBandVolumeUSD * 100
 	}
+	var copyableBucketCount, copyableMarketCount, copyableWinCount, copyableLossCount int
+	var copyableVolumeUSD, copyableNetPnLUSD float64
+	bestBucketLabel := ""
+	bestBucketMarketCount := 0
+	bestBucketWinRateWilson := 0.0
+	bestBucketROIPct := 0.0
+	bucketSummary := make([]priceBucketStats, 0, len(copyablePriceBuckets))
+	for _, def := range copyablePriceBuckets {
+		bs := bucketStats[def.Label]
+		if bs == nil || bs.MarketCount == 0 {
+			continue
+		}
+		settled := bs.WinCount + bs.LossCount
+		if settled > 0 {
+			bs.WinRate = float64(bs.WinCount) / float64(settled) * 100
+			bs.Wilson = db.WilsonLowerBound95(bs.WinCount, settled)
+		}
+		if bs.VolumeUSD > 0 {
+			bs.ROIPct = bs.NetPnLUSD / bs.VolumeUSD * 100
+		}
+		bs.Copyable = bs.MarketCount >= copyableBucketMinMarkets && bs.ROIPct > 0 && bs.NetPnLUSD > 0
+		if bs.Copyable {
+			copyableBucketCount++
+			copyableMarketCount += bs.MarketCount
+			copyableWinCount += bs.WinCount
+			copyableLossCount += bs.LossCount
+			copyableVolumeUSD += bs.VolumeUSD
+			copyableNetPnLUSD += bs.NetPnLUSD
+			if bestBucketLabel == "" || bs.ROIPct > bestBucketROIPct {
+				bestBucketLabel = bs.Label
+				bestBucketMarketCount = bs.MarketCount
+				bestBucketWinRateWilson = bs.Wilson
+				bestBucketROIPct = bs.ROIPct
+			}
+		}
+		bucketSummary = append(bucketSummary, *bs)
+	}
+	copyableWinRate := 0.0
+	if settled := copyableWinCount + copyableLossCount; settled > 0 {
+		copyableWinRate = float64(copyableWinCount) / float64(settled) * 100
+	}
+	copyableWinRateWilson := db.WilsonLowerBound95(copyableWinCount, copyableWinCount+copyableLossCount)
+	copyableROIPct := 0.0
+	if copyableVolumeUSD > 0 {
+		copyableROIPct = copyableNetPnLUSD / copyableVolumeUSD * 100
+	}
+	bucketSummaryJSON := ""
+	if len(bucketSummary) > 0 {
+		if b, err := json.Marshal(bucketSummary); err == nil {
+			bucketSummaryJSON = string(b)
+		}
+	}
 
 	totalIncome := totalRedeemUSDC + totalMergeUSDC + totalSellUSDC
 	netPnL := totalIncome - totalCost
@@ -888,6 +998,17 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 		PriceBandROIPct:         priceBandROIPct,
 		PriceBandNetPnLUSD:      priceBandNetPnLUSD,
 		PriceBandVolumeUSD:      priceBandVolumeUSD,
+		CopyableBucketCount:     copyableBucketCount,
+		CopyableMarketCount:     copyableMarketCount,
+		CopyableWinRate:         copyableWinRate,
+		CopyableWinRateWilson:   copyableWinRateWilson,
+		CopyableROIPct:          copyableROIPct,
+		CopyableNetPnLUSD:       copyableNetPnLUSD,
+		BestBucketLabel:         bestBucketLabel,
+		BestBucketMarketCount:   bestBucketMarketCount,
+		BestBucketWinRateWilson: bestBucketWinRateWilson,
+		BestBucketROIPct:        bestBucketROIPct,
+		BucketSummary:           bucketSummaryJSON,
 	}, true
 }
 

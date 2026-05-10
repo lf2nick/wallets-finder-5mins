@@ -91,5 +91,7 @@ func defaultConfig() []defaultCfg {
 		{"avg_buy_price_max", 0.75},
 		{"extreme_price_ratio_max", 20},
 		{"price_band_market_ratio_min", 60},
+		{"copyable_buckets_min", 0},
+		{"copyable_roi_min", 0},
 	}
 }

@@ -141,6 +141,17 @@ export type Candidate = {
   price_band_net_pnl_usd: number;
   price_band_volume_usd: number;
   price_band_market_ratio: number;
+  copyable_bucket_count: number;
+  copyable_market_count: number;
+  copyable_win_rate: number;
+  copyable_win_rate_wilson: number;
+  copyable_roi_pct: number;
+  copyable_net_pnl_usd: number;
+  best_bucket_label: string;
+  best_bucket_market_count: number;
+  best_bucket_win_rate_wilson: number;
+  best_bucket_roi_pct: number;
+  bucket_summary: string;
   last_trade_at?: string;
   evaluated_at: string;
   already_observed: boolean;
@@ -159,6 +170,8 @@ export type Filter = {
   AvgBuyPriceMax: number;
   ExtremePriceMaxPct: number;
   PriceBandRatioMinPct: number;
+  CopyableBucketsMin: number;
+  CopyableROIMinPct: number;
   SortBy: string;
   Limit: number;
 };

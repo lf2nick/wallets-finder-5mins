@@ -24,7 +24,13 @@ type SortKey =
   | "price_band_win_rate_wilson"
   | "price_band_roi_pct"
   | "avg_buy_price"
-  | "extreme_price_ratio";
+  | "extreme_price_ratio"
+  | "copyable_bucket_count"
+  | "copyable_market_count"
+  | "copyable_win_rate_wilson"
+  | "copyable_roi_pct"
+  | "copyable_net_pnl_usd"
+  | "best_bucket_roi_pct";
 
 type Toast = { msg: string; kind: "success" | "error"; id: number } | null;
 
@@ -64,6 +70,8 @@ export default function App() {
         avg_buy_price_max: cfg.avg_buy_price_max ?? 0.75,
         extreme_price_ratio_max: cfg.extreme_price_ratio_max ?? 20,
         price_band_market_ratio_min: cfg.price_band_market_ratio_min ?? 60,
+        copyable_buckets_min: cfg.copyable_buckets_min ?? 0,
+        copyable_roi_min: cfg.copyable_roi_min ?? 0,
       };
       setFilter(fv);
       const d = await api.getCandidates({ sort: sortBy });

@@ -18,7 +18,13 @@ type SortKey =
   | "price_band_win_rate_wilson"
   | "price_band_roi_pct"
   | "avg_buy_price"
-  | "extreme_price_ratio";
+  | "extreme_price_ratio"
+  | "copyable_bucket_count"
+  | "copyable_market_count"
+  | "copyable_win_rate_wilson"
+  | "copyable_roi_pct"
+  | "copyable_net_pnl_usd"
+  | "best_bucket_roi_pct";
 
 type Props = {
   items: Candidate[];
@@ -37,6 +43,11 @@ const COLS: { key: SortKey; label: string; tip?: string; fmt: (c: Candidate) => 
   { key: "price_band_market_ratio", label: "價格帶占比", tip: "0.3~0.7 市場數 / 已結算市場數。", fmt: (c) => fmtPct(c.price_band_market_ratio, 0) },
   { key: "price_band_win_rate_wilson", label: "價格帶W95", tip: "0.3~0.7 價格帶的市場級 W95。", fmt: (c) => fmtPct(c.price_band_win_rate_wilson, 1) },
   { key: "price_band_roi_pct", label: "價格帶ROI", tip: "只看 0.3~0.7 價格帶的 ROI。", fmt: (c) => fmtPct(c.price_band_roi_pct, 1) },
+  { key: "copyable_bucket_count", label: "可跟帶", tip: "正 ROI 且至少 5 個市場的價格帶數。", fmt: (c) => String(c.copyable_bucket_count) },
+  { key: "copyable_market_count", label: "可跟市場", tip: "可跟價格帶內的市場數。", fmt: (c) => String(c.copyable_market_count) },
+  { key: "copyable_win_rate_wilson", label: "可跟W95", tip: "只看可跟價格帶的 Wilson 95% 下界。", fmt: (c) => fmtPct(c.copyable_win_rate_wilson, 1) },
+  { key: "copyable_roi_pct", label: "可跟ROI", tip: "只看可跟價格帶的合計 ROI。", fmt: (c) => fmtPct(c.copyable_roi_pct, 1) },
+  { key: "best_bucket_roi_pct", label: "最佳帶", tip: "ROI 最高的可跟價格帶。", fmt: (c) => c.best_bucket_label ? `${c.best_bucket_label} ${fmtPct(c.best_bucket_roi_pct, 0)}` : "-" },
   { key: "avg_buy_price", label: "均價", tip: "全部 BUY 的加權平均價格。", fmt: (c) => c.avg_buy_price.toFixed(3) },
   { key: "extreme_price_ratio", label: "極端價", tip: "BUY 價格 <=0.15 或 >=0.85 的交易占比。", fmt: (c) => fmtPct(c.extreme_price_ratio, 0) },
   { key: "no_reduce_ratio", label: "不減倉", tip: "結算前沒有 SELL/減倉的市場比例。", fmt: (c) => fmtPct(c.no_reduce_ratio, 0) },
