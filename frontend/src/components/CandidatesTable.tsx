@@ -108,12 +108,6 @@ export function CandidatesTable({ items, sortBy, onSortChange, onObserved, onWal
                     target="_blank"
                     rel="noopener"
                     title={c.address}
-                    onClick={(e) => {
-                      if (onWalletClick) {
-                        e.preventDefault();
-                        onWalletClick(c.address);
-                      }
-                    }}
                   >
                     {shortAddr(c.address)}
                   </a>
@@ -124,6 +118,17 @@ export function CandidatesTable({ items, sortBy, onSortChange, onObserved, onWal
                   </td>
                 ))}
                 <td>
+                  {onWalletClick && (
+                    <button
+                      className="btn-mini"
+                      type="button"
+                      onClick={() => onWalletClick(c.address)}
+                      title="查看本工具內的錢包交易歷史"
+                      style={{ marginRight: 6 }}
+                    >
+                      歷史
+                    </button>
+                  )}
                   {c.already_observed ? (
                     <span className="btn-mini observed">已觀察</span>
                   ) : (
