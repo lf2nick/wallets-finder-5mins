@@ -24,7 +24,7 @@ export function HistoryPanel({ walletAddress, onClearWallet }: Props) {
   }, [walletAddress]);
 
   return (
-    <div className="card">
+    <div className="card side-panel">
       <div className="tabs">
         <div className={`tab ${tab === "config" ? "active" : ""}`} onClick={() => setTab("config")}>
           設定變動

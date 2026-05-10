@@ -60,6 +60,29 @@ h1 {
   gap: 10px;
 }
 
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 14px;
+  align-items: start;
+}
+
+.candidates-card {
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.candidates-scroll {
+  overflow-x: auto;
+  max-height: 60vh;
+}
+
+.side-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
 button {
   padding: 6px 12px;
   border: 1px solid var(--border);
@@ -111,7 +134,8 @@ input[type="number"], input[type="text"], input[type="password"] {
 
 /* candidates table */
 table.candidates {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -178,6 +202,20 @@ table.candidates tbody tr:hover { background: var(--card-hi); }
   padding: 6px 0;
   font-size: 12px;
   border-bottom: 1px dashed var(--border);
+}
+.history-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.side-panel .mono {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* password gate */

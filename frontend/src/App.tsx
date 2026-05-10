@@ -157,7 +157,7 @@ export default function App() {
         toast={showToast}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 14 }}>
+      <div className="dashboard-grid">
         <CandidatesTable
           items={items}
           sortBy={sortBy}

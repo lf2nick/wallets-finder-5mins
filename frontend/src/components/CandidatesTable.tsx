@@ -102,8 +102,8 @@ export function CandidatesTable({ items, sortBy, onSortChange, onObserved, onWal
   }
 
   return (
-    <div className="card" style={{ padding: 0 }}>
-      <div style={{ overflowX: "auto", maxHeight: "60vh" }}>
+    <div className="card candidates-card">
+      <div className="candidates-scroll">
         <table className="candidates">
           <thead>
             <tr>
