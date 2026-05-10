@@ -35,10 +35,6 @@ const (
 	dataAPI     = "https://data-api.polymarket.com"
 	intervalSec = 300 // 5 分鐘 = 300 秒（每個市場時間長度）
 
-	// Phase 1：每 asset 取最近 seedHoursWindow 小時範圍內的市場做 sample
-	// 24h × 12 markets/hour × 4 assets = 1152 markets to probe
-	seedHoursWindow = 24
-
 	// 並行控制（跟 poly-tracker 同設定）：太快被 rate-limit；太慢拉長 scan
 	gammaConcurrency = 8
 	dataConcurrency  = 6
@@ -121,7 +117,7 @@ func (s *Scanner) SnapshotProgress() Progress {
 //	  此參數只 propagate 進 crypto_finder_runs 紀錄）
 //
 // 回傳 (seedCount, candidateCount, error)。
-func (s *Scanner) Scan(ctx context.Context, days, minTrades int) (int, int, error) {
+func (s *Scanner) Scan(ctx context.Context, seedDays, evalDays, minTrades int) (int, int, error) {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -137,12 +133,12 @@ func (s *Scanner) Scan(ctx context.Context, days, minTrades int) (int, int, erro
 		s.mu.Unlock()
 	}()
 
-	runID, err := s.db.StartCryptoFinderRun(ctx, days, minTrades)
+	runID, err := s.db.StartCryptoFinderRun(ctx, seedDays, evalDays, minTrades)
 	if err != nil {
 		return 0, 0, fmt.Errorf("start run: %w", err)
 	}
 
-	seeds, err := s.collectSeedWallets(ctx)
+	seeds, err := s.collectSeedWallets(ctx, seedDays)
 	if err != nil {
 		_ = s.db.FinishCryptoFinderRun(ctx, runID, 0, 0, err.Error())
 		s.setPhase("error", err.Error())
@@ -150,7 +146,7 @@ func (s *Scanner) Scan(ctx context.Context, days, minTrades int) (int, int, erro
 	}
 
 	s.setProgress(Progress{Phase: "evaluating", WalletsTotal: len(seeds), StartedAt: s.progress.StartedAt})
-	candidates := s.evaluateWallets(ctx, seeds, days)
+	candidates := s.evaluateWallets(ctx, seeds, evalDays)
 
 	if err := s.db.ReplaceCryptoCandidates(ctx, candidates); err != nil {
 		_ = s.db.FinishCryptoFinderRun(ctx, runID, len(seeds), len(candidates), err.Error())
@@ -167,9 +163,9 @@ func (s *Scanner) Scan(ctx context.Context, days, minTrades int) (int, int, erro
 
 // ── Phase 1: seed collection ─────────────────────────────────────────────────
 
-func (s *Scanner) collectSeedWallets(ctx context.Context) (map[string]struct{}, error) {
+func (s *Scanner) collectSeedWallets(ctx context.Context, seedDays int) (map[string]struct{}, error) {
 	now := time.Now().Unix()
-	startTs := now - int64(seedHoursWindow)*3600
+	startTs := now - int64(seedDays)*86400
 	startTs = (startTs / intervalSec) * intervalSec
 
 	type job struct{ slug string }
@@ -181,7 +177,7 @@ func (s *Scanner) collectSeedWallets(ctx context.Context) (map[string]struct{}, 
 	}
 
 	s.setProgress(Progress{Phase: "seeding", MarketsTotal: len(jobs), StartedAt: s.progress.StartedAt})
-	log.Printf("[scanner] Phase 1: probe %d markets (4 assets × %dh × 12/h)", len(jobs), seedHoursWindow)
+	log.Printf("[scanner] Phase 1: probe %d markets (4 assets × %dd × 12/h)", len(jobs), seedDays)
 
 	jobCh := make(chan job, len(jobs))
 	for _, j := range jobs {

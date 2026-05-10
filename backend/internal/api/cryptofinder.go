@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// POST /api/cryptofinder/scan?days=14&min_trades=30
+// POST /api/cryptofinder/scan?seed_days=1&eval_days=14&min_trades=30
 //
 // 立刻 trigger 一次 scan（背景跑，不阻塞 HTTP request）。
 // 如果已有 scan 在跑，回 409 Conflict。
@@ -27,10 +27,16 @@ func (s *Server) handleCryptofinderScan(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	q := r.URL.Query()
-	days := 14
+	seedDays := 1
+	evalDays := 14
 	minTrades := 30
-	if v := parseInt(q.Get("days"), 0); v > 0 && v <= 90 {
-		days = v
+	if v := parseInt(q.Get("seed_days"), 0); v > 0 && v <= 30 {
+		seedDays = v
+	}
+	if v := parseInt(q.Get("eval_days"), 0); v > 0 && v <= 90 {
+		evalDays = v
+	} else if v := parseInt(q.Get("days"), 0); v > 0 && v <= 90 {
+		evalDays = v
 	}
 	if v := parseInt(q.Get("min_trades"), 0); v > 0 && v <= 10000 {
 		minTrades = v
@@ -39,7 +45,7 @@ func (s *Server) handleCryptofinderScan(w http.ResponseWriter, r *http.Request) 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*60*1000*1000*1000) // 30 min
 		defer cancel()
-		seedCount, candCount, err := s.scanner.Scan(ctx, days, minTrades)
+		seedCount, candCount, err := s.scanner.Scan(ctx, seedDays, evalDays, minTrades)
 		if err != nil {
 			log.Printf("[wf5m/scan] 失敗: %v", err)
 			return
@@ -48,7 +54,8 @@ func (s *Server) handleCryptofinderScan(w http.ResponseWriter, r *http.Request) 
 	}()
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok":         true,
-		"days":       days,
+		"seed_days":  seedDays,
+		"eval_days":  evalDays,
 		"min_trades": minTrades,
 		"message":    "scan triggered — poll /api/cryptofinder/status",
 	})

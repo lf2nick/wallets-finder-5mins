@@ -1,13 +1,10 @@
-// ScanPanel — 觸發 cryptofinder scan + 顯示進度
-//
-// scan 走背景跑 ~3-8 min，所以前端打 /api/cryptofinder/scan 後 poll
-// /api/cryptofinder/status 拿 progress 直到 phase=done|error。
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
 const API = {
-  trigger: async (token: string, days: number, minTrades: number) => {
+  trigger: async (token: string, seedDays: number, evalDays: number, minTrades: number) => {
     const r = await fetch(
-      `/api/cryptofinder/scan?days=${days}&min_trades=${minTrades}`,
+      `/api/cryptofinder/scan?seed_days=${seedDays}&eval_days=${evalDays}&min_trades=${minTrades}`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -42,7 +39,9 @@ type LastRun = {
   id: number;
   started_at: string;
   finished_at?: string;
+  seed_days_window?: number;
   days_window: number;
+  eval_days_window?: number;
   min_trades: number;
   seed_count: number;
   candidate_count: number;
@@ -51,19 +50,19 @@ type LastRun = {
 
 type Props = {
   token: string;
-  onScanComplete: () => void; // 給 App 用，scan 完幫忙刷 candidates
+  onScanComplete: () => void;
   toast: (msg: string, kind?: "success" | "error") => void;
 };
 
 export function ScanPanel({ token, onScanComplete, toast }: Props) {
-  const [days, setDays] = useState(14);
+  const [seedDays, setSeedDays] = useState(1);
+  const [evalDays, setEvalDays] = useState(14);
   const [minTrades, setMinTrades] = useState(30);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
   const pollTimer = useRef<number | null>(null);
 
-  // 啟動時拉一次 status — 知道有沒有上次 scan 紀錄 + 是不是有 scan 在跑
   useEffect(() => {
     refreshStatus();
     return () => {
@@ -74,7 +73,7 @@ export function ScanPanel({ token, onScanComplete, toast }: Props) {
 
   function startPolling() {
     if (pollTimer.current) window.clearInterval(pollTimer.current);
-    pollTimer.current = window.setInterval(refreshStatus, 3000); // 每 3s 拉一次
+    pollTimer.current = window.setInterval(refreshStatus, 3000);
   }
 
   function stopPolling() {
@@ -91,59 +90,79 @@ export function ScanPanel({ token, onScanComplete, toast }: Props) {
       setRunning(!!s.running);
       setProgress(s.progress || null);
       setLastRun(s.last_run || null);
-      // running false → done：通知 caller 重抓 candidates
+
       if (wasRunning && !s.running) {
         stopPolling();
         if (s.progress?.phase === "done") {
-          toast(`✅ scan 完成（${s.progress?.detail || ""}）`, "success");
+          toast(`scan 完成：${s.progress?.detail || ""}`, "success");
           onScanComplete();
         } else if (s.progress?.phase === "error") {
           toast(`scan 失敗：${s.progress?.detail || "unknown"}`, "error");
         }
       } else if (!wasRunning && s.running) {
-        // 外部觸發的 scan：開始 poll
         startPolling();
       }
-    } catch (e) {
-      // 靜默 — 可能 token 失效，主畫面會重定向到 PasswordGate
+    } catch {
+      // 狀態輪詢失敗時不打斷使用者操作，下一次 polling 會再補抓。
     }
   }
 
   async function triggerScan() {
-    if (!confirm(
-      `確定要 trigger 一次 cryptofinder scan?\n\n` +
-      `視窗: ${days} 天\n最少筆數: ${minTrades}\n\n` +
-      `預計 3-8 分鐘完成（4 個資產 × 並行 8 worker）。\n` +
-      `背景跑，這頁會 poll 進度。`
-    )) return;
+    if (
+      !confirm(
+        `確定要啟動 cryptofinder scan?\n\n` +
+          `掃描近 ${seedDays} 天的錢包\n` +
+          `該錢包近 ${evalDays} 天的交易結果\n` +
+          `最少筆數: ${minTrades}\n\n` +
+          `seed_days 越大，掃描市場數和 API 時間會明顯增加。`
+      )
+    ) {
+      return;
+    }
+
     try {
-      await API.trigger(token, days, minTrades);
-      toast("scan 已觸發 — 等 3-8 分鐘", "success");
+      await API.trigger(token, seedDays, evalDays, minTrades);
+      toast("scan 已啟動，請稍候並觀察進度", "success");
       setRunning(true);
       setProgress({ phase: "seeding" });
       startPolling();
     } catch (e: any) {
-      toast(`觸發失敗: ${e.message || e}`, "error");
+      toast(`啟動失敗: ${e.message || e}`, "error");
     }
   }
+
+  const lastSeedDays = lastRun?.seed_days_window ?? 1;
+  const lastEvalDays = lastRun?.eval_days_window ?? lastRun?.days_window;
 
   return (
     <div className="card">
       <div className="card-title">🔍 Cryptofinder Scan</div>
       <div style={{ display: "flex", gap: 14, alignItems: "end", flexWrap: "wrap" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--muted)" }}>
-          <span>窗口（天）</span>
+        <label style={labelStyle}>
+          <span>掃描近 X 天的錢包</span>
           <input
             type="number"
-            value={days}
+            value={seedDays}
             min={1}
-            max={90}
-            onChange={(e) => setDays(parseInt(e.target.value, 10) || 14)}
+            max={30}
+            onChange={(e) => setSeedDays(parseInt(e.target.value, 10) || 1)}
             disabled={running}
             style={{ width: 80 }}
           />
         </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+        <label style={labelStyle}>
+          <span>該錢包近 X 天的交易結果</span>
+          <input
+            type="number"
+            value={evalDays}
+            min={1}
+            max={90}
+            onChange={(e) => setEvalDays(parseInt(e.target.value, 10) || 14)}
+            disabled={running}
+            style={{ width: 80 }}
+          />
+        </label>
+        <label style={labelStyle}>
           <span>最少筆數</span>
           <input
             type="number"
@@ -183,11 +202,13 @@ export function ScanPanel({ token, onScanComplete, toast }: Props) {
 
       {!running && lastRun && (
         <div style={{ marginTop: 12, fontSize: 11 }} className="muted">
-          上次 scan：
+          上次 scan:{" "}
           {lastRun.finished_at ? (
             <>
               {fmtTime(lastRun.finished_at)} —
-              <span className="mono"> seed={lastRun.seed_count} cand={lastRun.candidate_count}</span>
+              <span className="mono">
+                {" "}seedDays={lastSeedDays} evalDays={lastEvalDays} seed={lastRun.seed_count} cand={lastRun.candidate_count}
+              </span>
               {lastRun.error && <span className="red"> error: {lastRun.error}</span>}
             </>
           ) : (
@@ -198,6 +219,14 @@ export function ScanPanel({ token, onScanComplete, toast }: Props) {
     </div>
   );
 }
+
+const labelStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  fontSize: 12,
+  color: "var(--muted)",
+};
 
 function ProgressBar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? (value / max) * 100 : 0;

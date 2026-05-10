@@ -202,6 +202,7 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 			id              BIGSERIAL    PRIMARY KEY,
 			started_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
 			finished_at     TIMESTAMPTZ,
+			seed_days_window INT         NOT NULL DEFAULT 1,
 			days_window     INT          NOT NULL,
 			min_trades      INT          NOT NULL,
 			seed_count      INT          NOT NULL DEFAULT 0,
@@ -210,6 +211,10 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 		)
 	`); err != nil {
 		return fmt.Errorf("create crypto_finder_runs: %w", err)
+	}
+	if _, err := db.sql.ExecContext(ctx,
+		`ALTER TABLE crypto_finder_runs ADD COLUMN IF NOT EXISTS seed_days_window INT NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("add crypto_finder_runs seed_days_window: %w", err)
 	}
 	return nil
 }
@@ -300,18 +305,20 @@ type CryptoFinderRun struct {
 	ID             int64      `json:"id"`
 	StartedAt      time.Time  `json:"started_at"`
 	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	SeedDaysWindow int        `json:"seed_days_window"`
 	DaysWindow     int        `json:"days_window"`
+	EvalDaysWindow int        `json:"eval_days_window"`
 	MinTrades      int        `json:"min_trades"`
 	SeedCount      int        `json:"seed_count"`
 	CandidateCount int        `json:"candidate_count"`
 	Error          string     `json:"error,omitempty"`
 }
 
-func (db *DB) StartCryptoFinderRun(ctx context.Context, days, minTrades int) (int64, error) {
+func (db *DB) StartCryptoFinderRun(ctx context.Context, seedDays, evalDays, minTrades int) (int64, error) {
 	var id int64
 	err := db.sql.QueryRowContext(ctx, `
-		INSERT INTO crypto_finder_runs (days_window, min_trades) VALUES ($1, $2) RETURNING id
-	`, days, minTrades).Scan(&id)
+		INSERT INTO crypto_finder_runs (seed_days_window, days_window, min_trades) VALUES ($1, $2, $3) RETURNING id
+	`, seedDays, evalDays, minTrades).Scan(&id)
 	return id, err
 }
 
@@ -328,11 +335,11 @@ func (db *DB) LastCryptoFinderRun(ctx context.Context) (*CryptoFinderRun, error)
 	var r CryptoFinderRun
 	var fin sql.NullTime
 	err := db.sql.QueryRowContext(ctx, `
-		SELECT id, started_at, finished_at, days_window, min_trades,
+		SELECT id, started_at, finished_at, seed_days_window, days_window, min_trades,
 		       seed_count, candidate_count, error
 		FROM crypto_finder_runs
 		ORDER BY id DESC LIMIT 1
-	`).Scan(&r.ID, &r.StartedAt, &fin, &r.DaysWindow, &r.MinTrades,
+	`).Scan(&r.ID, &r.StartedAt, &fin, &r.SeedDaysWindow, &r.DaysWindow, &r.MinTrades,
 		&r.SeedCount, &r.CandidateCount, &r.Error)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -343,6 +350,7 @@ func (db *DB) LastCryptoFinderRun(ctx context.Context) (*CryptoFinderRun, error)
 	if fin.Valid {
 		r.FinishedAt = &fin.Time
 	}
+	r.EvalDaysWindow = r.DaysWindow
 	return &r, nil
 }
 

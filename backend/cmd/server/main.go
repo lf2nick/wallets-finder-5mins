@@ -78,7 +78,7 @@ func runAutoScanTicker(ctx context.Context, scn *scanner.Scanner, hours int) {
 		}
 		log.Printf("[wf5m] auto-scan tick 啟動")
 		scanCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
-		seed, cand, err := scn.Scan(scanCtx, 14, 30) // 預設參數，跟 poly-tracker 一致
+		seed, cand, err := scn.Scan(scanCtx, 1, 14, 30) // seed 近 1 天，績效評估近 14 天
 		cancel()
 		if err != nil {
 			log.Printf("[wf5m] auto-scan 失敗: %v", err)
