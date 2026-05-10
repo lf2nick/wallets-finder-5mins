@@ -7,70 +7,109 @@ import (
 	"time"
 )
 
-// Candidate 是 crypto_wallet_candidates 一筆的子集（只取我們 finder 用得到的欄位）。
-// 不 SELECT *，避免 poly-tracker 改 schema 把這邊弄壞（依 user 的 review）。
+// Candidate 是前端候選錢包列表使用的投影。
 type Candidate struct {
-	Address           string    `json:"address"`
-	TotalTrades       int       `json:"total_trades"`
-	WinCount          int       `json:"win_count"`
-	LoseCount         int       `json:"lose_count"`
-	WinRate           float64   `json:"win_rate"`
-	ROIPct            float64   `json:"roi_pct"`
-	NetPnLUSD         float64   `json:"net_pnl_usd"`
-	VolumeUSD         float64   `json:"volume_usd"`
-	CryptoRatio       float64   `json:"crypto_ratio"`
-	DualMarketRatio   float64   `json:"dual_market_ratio"`
-	HoldToSettleRatio float64   `json:"hold_to_settle_ratio"`
-	AvgBuyOffsetSec   float64   `json:"avg_buy_offset_sec"`
-	ProfitLossRatio   float64   `json:"profit_loss_ratio"`
-	WashRatio         float64   `json:"wash_ratio"`
-	LastTradeAt       time.Time `json:"last_trade_at,omitempty"`
-	EvaluatedAt       time.Time `json:"evaluated_at"`
-	AlreadyObserved   bool      `json:"already_observed"` // 已在 copy_sim_wallets？
+	Address           string  `json:"address"`
+	TotalTrades       int     `json:"total_trades"`
+	WinCount          int     `json:"win_count"`
+	LoseCount         int     `json:"lose_count"`
+	WinRate           float64 `json:"win_rate"`
+	ROIPct            float64 `json:"roi_pct"`
+	NetPnLUSD         float64 `json:"net_pnl_usd"`
+	VolumeUSD         float64 `json:"volume_usd"`
+	CryptoRatio       float64 `json:"crypto_ratio"`
+	DualMarketRatio   float64 `json:"dual_market_ratio"`
+	HoldToSettleRatio float64 `json:"hold_to_settle_ratio"`
+	AvgBuyOffsetSec   float64 `json:"avg_buy_offset_sec"`
+	ProfitLossRatio   float64 `json:"profit_loss_ratio"`
+	WashRatio         float64 `json:"wash_ratio"`
+
+	SettledMarketCount      int     `json:"settled_market_count"`
+	MarketWinCount          int     `json:"market_win_count"`
+	MarketLossCount         int     `json:"market_loss_count"`
+	MarketWinRate           float64 `json:"market_win_rate"`
+	MarketWinRateWilson     float64 `json:"market_win_rate_wilson"`
+	NoReduceRatio           float64 `json:"no_reduce_ratio"`
+	ReduceBeforeSettleRatio float64 `json:"reduce_before_settle_ratio"`
+	AddMarketRatio          float64 `json:"add_market_ratio"`
+	AvgAddsPerMarket        float64 `json:"avg_adds_per_market"`
+	PriceBandMarketCount    int     `json:"price_band_market_count"`
+	PriceBandWinCount       int     `json:"price_band_win_count"`
+	PriceBandLossCount      int     `json:"price_band_loss_count"`
+	PriceBandWinRate        float64 `json:"price_band_win_rate"`
+	PriceBandWinRateWilson  float64 `json:"price_band_win_rate_wilson"`
+	PriceBandROIPct         float64 `json:"price_band_roi_pct"`
+	PriceBandNetPnLUSD      float64 `json:"price_band_net_pnl_usd"`
+	PriceBandVolumeUSD      float64 `json:"price_band_volume_usd"`
+
+	LastTradeAt     time.Time `json:"last_trade_at,omitempty"`
+	EvaluatedAt     time.Time `json:"evaluated_at"`
+	AlreadyObserved bool      `json:"already_observed"`
 }
 
-// CandidateFilter 是「找 wallet」的條件組合。
-// 全 nil = 不過濾（debug 用）；正常 user 流程會塞當前 wf5m_config 值。
+// CandidateFilter 是候選查詢的硬條件；零值代表不額外限制。
 type CandidateFilter struct {
-	DualMaxPct      float64 // dual_market_ratio ≤ 此值
-	CryptoMinPct    float64 // crypto_ratio ≥ 此值
-	HoldMinPct      float64 // hold_to_settle_ratio ≥ 此值
-	MinTrades       int     // total_trades ≥ 此值
-	SortBy          string  // "net_pnl_usd" / "win_rate" / "roi_pct" — 預設 net_pnl_usd
-	Limit           int     // 預設 500
+	DualMaxPct          float64
+	CryptoMinPct        float64
+	HoldMinPct          float64
+	MinTrades           int
+	SettledMarketsMin   int
+	MarketW95MinPct     float64
+	NoReduceMinPct      float64
+	PriceBandMarketsMin int
+	PriceBandROIMinPct  float64
+	SortBy              string
+	Limit               int
 }
 
-// FindCandidates 套用 filter 撈 candidates。
-// LEFT JOIN copy_sim_wallets 標 already_observed。
+// FindCandidates 依照目前 filter 回傳候選錢包，並標記是否已加入 copy_sim_wallets。
 func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidate, error) {
 	sortBy := "net_pnl_usd"
 	switch f.SortBy {
-	case "win_rate", "roi_pct", "total_trades", "hold_to_settle_ratio":
+	case "win_rate", "roi_pct", "total_trades", "hold_to_settle_ratio",
+		"market_win_rate", "market_win_rate_wilson", "settled_market_count",
+		"no_reduce_ratio", "add_market_ratio", "price_band_market_count",
+		"price_band_win_rate", "price_band_win_rate_wilson", "price_band_roi_pct":
 		sortBy = f.SortBy
 	}
 	limit := f.Limit
 	if limit <= 0 || limit > 5000 {
 		limit = 500
 	}
+
 	q := fmt.Sprintf(`
 		SELECT c.address, c.total_trades, c.win_count, c.lose_count,
 		       c.win_rate, c.roi_pct, c.net_pnl_usd, c.volume_usd,
 		       c.crypto_ratio, c.dual_market_ratio, c.hold_to_settle_ratio,
 		       c.avg_buy_offset_sec, c.profit_loss_ratio, c.wash_ratio,
+		       c.settled_market_count, c.market_win_count, c.market_loss_count,
+		       c.market_win_rate, c.market_win_rate_wilson,
+		       c.no_reduce_ratio, c.reduce_before_settle_ratio,
+		       c.add_market_ratio, c.avg_adds_per_market,
+		       c.price_band_market_count, c.price_band_win_count, c.price_band_loss_count,
+		       c.price_band_win_rate, c.price_band_win_rate_wilson,
+		       c.price_band_roi_pct, c.price_band_net_pnl_usd, c.price_band_volume_usd,
 		       c.last_trade_at, c.evaluated_at,
 		       (s.address IS NOT NULL) AS already_observed
 		FROM crypto_wallet_candidates c
 		LEFT JOIN copy_sim_wallets s ON LOWER(s.address) = c.address
-		WHERE c.dual_market_ratio   <= $1
-		  AND c.crypto_ratio        >= $2
-		  AND c.hold_to_settle_ratio >= $3
-		  AND c.total_trades        >= $4
+		WHERE c.dual_market_ratio       <= $1
+		  AND c.crypto_ratio            >= $2
+		  AND c.hold_to_settle_ratio    >= $3
+		  AND c.total_trades            >= $4
+		  AND c.settled_market_count    >= $5
+		  AND c.market_win_rate_wilson  >= $6
+		  AND c.no_reduce_ratio         >= $7
+		  AND c.price_band_market_count >= $8
+		  AND c.price_band_roi_pct      >= $9
 		ORDER BY c.%s DESC
-		LIMIT $5
+		LIMIT $10
 	`, sortBy)
 
 	rows, err := db.sql.QueryContext(ctx, q,
-		f.DualMaxPct, f.CryptoMinPct, f.HoldMinPct, f.MinTrades, limit)
+		f.DualMaxPct, f.CryptoMinPct, f.HoldMinPct, f.MinTrades,
+		f.SettledMarketsMin, f.MarketW95MinPct, f.NoReduceMinPct,
+		f.PriceBandMarketsMin, f.PriceBandROIMinPct, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query candidates: %w", err)
 	}
@@ -84,6 +123,13 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 			&c.WinRate, &c.ROIPct, &c.NetPnLUSD, &c.VolumeUSD,
 			&c.CryptoRatio, &c.DualMarketRatio, &c.HoldToSettleRatio,
 			&c.AvgBuyOffsetSec, &c.ProfitLossRatio, &c.WashRatio,
+			&c.SettledMarketCount, &c.MarketWinCount, &c.MarketLossCount,
+			&c.MarketWinRate, &c.MarketWinRateWilson,
+			&c.NoReduceRatio, &c.ReduceBeforeSettleRatio,
+			&c.AddMarketRatio, &c.AvgAddsPerMarket,
+			&c.PriceBandMarketCount, &c.PriceBandWinCount, &c.PriceBandLossCount,
+			&c.PriceBandWinRate, &c.PriceBandWinRateWilson,
+			&c.PriceBandROIPct, &c.PriceBandNetPnLUSD, &c.PriceBandVolumeUSD,
 			&lt, &c.EvaluatedAt, &c.AlreadyObserved); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
@@ -95,7 +141,7 @@ func (db *DB) FindCandidates(ctx context.Context, f CandidateFilter) ([]Candidat
 	return out, rows.Err()
 }
 
-// CountCandidates 給 snapshot 用 — 知道 candidates 池總大小（沒 filter 的全部 row 數）。
+// CountCandidates 回傳目前候選池總數，不套 UI filter。
 func (db *DB) CountCandidates(ctx context.Context) (int, error) {
 	var n int
 	err := db.sql.QueryRowContext(ctx,

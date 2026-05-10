@@ -46,6 +46,10 @@ const (
 
 	// Phase 2：每個 wallet 抓多少筆 activity（API 上限通常 500）
 	activityLimit = 500
+
+	// 我們實際願意跟單的價格帶；市場級 EV 統計只看這段，避免高勝率被高買價吃掉。
+	followPriceBandMin = 0.30
+	followPriceBandMax = 0.70
 )
 
 // 4 個資產的 slug 前綴
@@ -77,7 +81,7 @@ type Scanner struct {
 
 // Progress 給前端 poll 看當下狀態（避免靜默等 5 分鐘）。
 type Progress struct {
-	Phase            string `json:"phase"`        // "idle" | "seeding" | "evaluating" | "done" | "error"
+	Phase            string `json:"phase"` // "idle" | "seeding" | "evaluating" | "done" | "error"
 	Detail           string `json:"detail"`
 	MarketsProbed    int    `json:"markets_probed"`
 	MarketsTotal     int    `json:"markets_total"`
@@ -426,14 +430,17 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 	// per-conditionId 累計：分 outcome 追蹤 BUY shares + 成本
 	// hold_to_settle 判定用 sellShares + lastSellTs（搬過來的新邏輯）
 	type pos struct {
-		eventSlug     string
-		buyShares     map[string]float64
-		buyUSDC       float64
-		buyTradeCount int
-		hasSell       bool
-		closeTs       int64
-		sellShares    map[string]float64
-		lastSellTs    int64
+		eventSlug          string
+		buyShares          map[string]float64
+		buyUSDC            float64
+		buyTradeCount      int
+		buyPriceSum        float64
+		buyPriceShares     float64
+		hasSell            bool
+		closeTs            int64
+		sellShares         map[string]float64
+		lastSellTs         int64
+		preCloseSellShares float64
 		// 24h subset
 		buyShares24h     map[string]float64
 		buyUSDC24h       float64
@@ -531,6 +538,8 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 				if a.Price > 0 && a.Size > 0 {
 					buyPriceSumWeighted += a.Price * a.Size
 					buySharesTotal += a.Size
+					p.buyPriceSum += a.Price * a.Size
+					p.buyPriceShares += a.Size
 					if a.Price >= 0.85 || a.Price <= 0.15 {
 						extremeBuyCount++
 					}
@@ -550,6 +559,9 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 				}
 				if a.Timestamp > p.lastSellTs {
 					p.lastSellTs = a.Timestamp
+				}
+				if p.closeTs > 0 && a.Timestamp < p.closeTs {
+					p.preCloseSellShares += a.Size
 				}
 				totalSellUSDC += a.UsdcSize
 				if is24h {
@@ -606,6 +618,10 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 	var washCount int
 	var settledMarketCount int
 	var holdToSettleCount int
+	var marketWinCount, marketLossCount int
+	var noReduceCount, reduceBeforeSettleCount int
+	var priceBandMarketCount, priceBandWinCount, priceBandLossCount int
+	var priceBandVolumeUSD, priceBandNetPnLUSD float64
 	closedList := make([]closedPos, 0)
 
 	for _, p := range positions {
@@ -645,14 +661,35 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 		totalRedeemUSDC += posIncome
 		netPnL := posIncome - p.buyUSDC
 		closedList = append(closedList, closedPos{closeTs: p.closeTs, netPnL: netPnL})
-		if posIncome >= p.buyUSDC {
+		marketWon := posIncome >= p.buyUSDC
+		if marketWon {
+			marketWinCount++
 			winCount += p.buyTradeCount
 			winMarkets++
 			sumWinUSD += netPnL
 		} else {
+			marketLossCount++
 			loseCount += p.buyTradeCount
 			loseMarkets++
 			sumLossUSD += -netPnL
+		}
+		if p.preCloseSellShares > 0 {
+			reduceBeforeSettleCount++
+		} else {
+			noReduceCount++
+		}
+		if p.buyPriceShares > 0 {
+			avgMarketPrice := p.buyPriceSum / p.buyPriceShares
+			if avgMarketPrice >= followPriceBandMin && avgMarketPrice <= followPriceBandMax {
+				priceBandMarketCount++
+				priceBandVolumeUSD += p.buyUSDC
+				priceBandNetPnLUSD += netPnL
+				if marketWon {
+					priceBandWinCount++
+				} else {
+					priceBandLossCount++
+				}
+			}
 		}
 		if p.buyUSDC24h > 0 {
 			var posIncome24h float64
@@ -717,6 +754,8 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 	// 雙向%
 	dualMarketCount := 0
 	allMarketCount := 0
+	addMarketCount := 0
+	totalAdds := 0
 	for _, p := range positions {
 		if p.buyUSDC <= 0 {
 			continue
@@ -725,10 +764,20 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 		if p.buyShares["Up"] > 0 && p.buyShares["Down"] > 0 {
 			dualMarketCount++
 		}
+		if p.buyTradeCount > 1 {
+			addMarketCount++
+			totalAdds += p.buyTradeCount - 1
+		}
 	}
 	dualMarketRatio := 0.0
 	if allMarketCount > 0 {
 		dualMarketRatio = float64(dualMarketCount) / float64(allMarketCount) * 100
+	}
+	addMarketRatio := 0.0
+	avgAddsPerMarket := 0.0
+	if allMarketCount > 0 {
+		addMarketRatio = float64(addMarketCount) / float64(allMarketCount) * 100
+		avgAddsPerMarket = float64(totalAdds) / float64(allMarketCount)
 	}
 
 	avgBuyPrice := 0.0
@@ -755,6 +804,27 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 
 	// (C) NetPnL — 完整公式（cost = BUY + SPLIT + CONV; income = REDEEM + MERGE + SELL）
 	totalCost := totalBuyUSDC + totalSplitUSDC + totalConvUSDC
+	marketWinRate := 0.0
+	if settled := marketWinCount + marketLossCount; settled > 0 {
+		marketWinRate = float64(marketWinCount) / float64(settled) * 100
+	}
+	marketWinRateWilson := db.WilsonLowerBound95(marketWinCount, marketWinCount+marketLossCount)
+	noReduceRatio := 0.0
+	reduceBeforeSettleRatio := 0.0
+	if settledMarketCount > 0 {
+		noReduceRatio = float64(noReduceCount) / float64(settledMarketCount) * 100
+		reduceBeforeSettleRatio = float64(reduceBeforeSettleCount) / float64(settledMarketCount) * 100
+	}
+	priceBandWinRate := 0.0
+	if settled := priceBandWinCount + priceBandLossCount; settled > 0 {
+		priceBandWinRate = float64(priceBandWinCount) / float64(settled) * 100
+	}
+	priceBandWinRateWilson := db.WilsonLowerBound95(priceBandWinCount, priceBandWinCount+priceBandLossCount)
+	priceBandROIPct := 0.0
+	if priceBandVolumeUSD > 0 {
+		priceBandROIPct = priceBandNetPnLUSD / priceBandVolumeUSD * 100
+	}
+
 	totalIncome := totalRedeemUSDC + totalMergeUSDC + totalSellUSDC
 	netPnL := totalIncome - totalCost
 	roi := 0.0
@@ -789,18 +859,35 @@ func (s *Scanner) evaluateOneWallet(ctx context.Context, addr string, cutoffTs i
 		NetPnLUSD24h:   netPnL24h,
 		VolumeUSD24h:   totalCost24h,
 
-		AvgWinUSD:         avgWinUSD,
-		AvgLossUSD:        avgLossUSD,
-		ProfitLossRatio:   plRatio,
-		MaxDrawdownUSD:    maxDD,
-		CryptoRatio:       cryptoRatio,
-		WashRatio:         washRatio,
-		WashCount:         washCount,
-		AvgBuyPrice:       avgBuyPrice,
-		ExtremePriceRatio: extremePriceRatio,
-		AvgBuyOffsetSec:   avgBuyOffsetSec,
-		DualMarketRatio:   dualMarketRatio,
-		HoldToSettleRatio: holdToSettleRatio,
+		AvgWinUSD:               avgWinUSD,
+		AvgLossUSD:              avgLossUSD,
+		ProfitLossRatio:         plRatio,
+		MaxDrawdownUSD:          maxDD,
+		CryptoRatio:             cryptoRatio,
+		WashRatio:               washRatio,
+		WashCount:               washCount,
+		AvgBuyPrice:             avgBuyPrice,
+		ExtremePriceRatio:       extremePriceRatio,
+		AvgBuyOffsetSec:         avgBuyOffsetSec,
+		DualMarketRatio:         dualMarketRatio,
+		HoldToSettleRatio:       holdToSettleRatio,
+		SettledMarketCount:      settledMarketCount,
+		MarketWinCount:          marketWinCount,
+		MarketLossCount:         marketLossCount,
+		MarketWinRate:           marketWinRate,
+		MarketWinRateWilson:     marketWinRateWilson,
+		NoReduceRatio:           noReduceRatio,
+		ReduceBeforeSettleRatio: reduceBeforeSettleRatio,
+		AddMarketRatio:          addMarketRatio,
+		AvgAddsPerMarket:        avgAddsPerMarket,
+		PriceBandMarketCount:    priceBandMarketCount,
+		PriceBandWinCount:       priceBandWinCount,
+		PriceBandLossCount:      priceBandLossCount,
+		PriceBandWinRate:        priceBandWinRate,
+		PriceBandWinRateWilson:  priceBandWinRateWilson,
+		PriceBandROIPct:         priceBandROIPct,
+		PriceBandNetPnLUSD:      priceBandNetPnLUSD,
+		PriceBandVolumeUSD:      priceBandVolumeUSD,
 	}, true
 }
 

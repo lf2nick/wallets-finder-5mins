@@ -25,12 +25,17 @@ func (s *Server) handleCandidates(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	filter := db.CandidateFilter{
-		DualMaxPct:   parseFloat(q.Get("dual_max"), cfg["dual_market_ratio_max"]),
-		CryptoMinPct: parseFloat(q.Get("crypto_min"), cfg["crypto_ratio_min"]),
-		HoldMinPct:   parseFloat(q.Get("hold_min"), cfg["hold_to_settle_ratio_min"]),
-		MinTrades:    int(parseFloat(q.Get("min_trades"), cfg["min_trades"])),
-		SortBy:       q.Get("sort"),
-		Limit:        parseInt(q.Get("limit"), 500),
+		DualMaxPct:          parseFloat(q.Get("dual_max"), cfg["dual_market_ratio_max"]),
+		CryptoMinPct:        parseFloat(q.Get("crypto_min"), cfg["crypto_ratio_min"]),
+		HoldMinPct:          parseFloat(q.Get("hold_min"), cfg["hold_to_settle_ratio_min"]),
+		MinTrades:           int(parseFloat(q.Get("min_trades"), cfg["min_trades"])),
+		SettledMarketsMin:   int(parseFloat(q.Get("settled_markets_min"), cfg["settled_markets_min"])),
+		MarketW95MinPct:     parseFloat(q.Get("market_wilson_min"), cfg["market_wilson_min"]),
+		NoReduceMinPct:      parseFloat(q.Get("no_reduce_ratio_min"), cfg["no_reduce_ratio_min"]),
+		PriceBandMarketsMin: int(parseFloat(q.Get("price_band_markets_min"), cfg["price_band_markets_min"])),
+		PriceBandROIMinPct:  parseFloat(q.Get("price_band_roi_min"), cfg["price_band_roi_min"]),
+		SortBy:              q.Get("sort"),
+		Limit:               parseInt(q.Get("limit"), 500),
 	}
 	cands, err := s.db.FindCandidates(r.Context(), filter)
 	if err != nil {
@@ -72,7 +77,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		// 簡單 sanity：值必須在合理 [0, 1000] 範圍
 		for k, v := range req.Updates {
-			if v < 0 || v > 1000 {
+			minValue := 0.0
+			if k == "price_band_roi_min" {
+				minValue = -1000
+			}
+			if v < minValue || v > 1000 {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid value for " + k})
 				return
 			}
@@ -102,12 +111,17 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := db.CandidateFilter{
-		DualMaxPct:   cfg["dual_market_ratio_max"],
-		CryptoMinPct: cfg["crypto_ratio_min"],
-		HoldMinPct:   cfg["hold_to_settle_ratio_min"],
-		MinTrades:    int(cfg["min_trades"]),
-		SortBy:       "net_pnl_usd",
-		Limit:        2000, // snapshot 多抓一點，UI 顯示用 default 500
+		DualMaxPct:          cfg["dual_market_ratio_max"],
+		CryptoMinPct:        cfg["crypto_ratio_min"],
+		HoldMinPct:          cfg["hold_to_settle_ratio_min"],
+		MinTrades:           int(cfg["min_trades"]),
+		SettledMarketsMin:   int(cfg["settled_markets_min"]),
+		MarketW95MinPct:     cfg["market_wilson_min"],
+		NoReduceMinPct:      cfg["no_reduce_ratio_min"],
+		PriceBandMarketsMin: int(cfg["price_band_markets_min"]),
+		PriceBandROIMinPct:  cfg["price_band_roi_min"],
+		SortBy:              "market_win_rate_wilson",
+		Limit:               2000, // snapshot 多抓一點，UI 顯示用 default 500
 	}
 	cands, err := s.db.FindCandidates(r.Context(), filter)
 	if err != nil {

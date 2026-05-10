@@ -54,6 +54,24 @@ type CryptoWalletCandidate struct {
 	AvgBuyOffsetSec   float64
 	DualMarketRatio   float64
 	HoldToSettleRatio float64
+
+	SettledMarketCount      int
+	MarketWinCount          int
+	MarketLossCount         int
+	MarketWinRate           float64
+	MarketWinRateWilson     float64
+	NoReduceRatio           float64
+	ReduceBeforeSettleRatio float64
+	AddMarketRatio          float64
+	AvgAddsPerMarket        float64
+	PriceBandMarketCount    int
+	PriceBandWinCount       int
+	PriceBandLossCount      int
+	PriceBandWinRate        float64
+	PriceBandWinRateWilson  float64
+	PriceBandROIPct         float64
+	PriceBandNetPnLUSD      float64
+	PriceBandVolumeUSD      float64
 }
 
 // MigrateCryptoFinder 建 crypto_wallet_candidates + crypto_finder_runs。
@@ -98,6 +116,23 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 		`avg_buy_offset_sec FLOAT NOT NULL DEFAULT 0`,
 		`dual_market_ratio FLOAT NOT NULL DEFAULT 0`,
 		`hold_to_settle_ratio FLOAT NOT NULL DEFAULT 0`,
+		`settled_market_count INT NOT NULL DEFAULT 0`,
+		`market_win_count INT NOT NULL DEFAULT 0`,
+		`market_loss_count INT NOT NULL DEFAULT 0`,
+		`market_win_rate FLOAT NOT NULL DEFAULT 0`,
+		`market_win_rate_wilson FLOAT NOT NULL DEFAULT 0`,
+		`no_reduce_ratio FLOAT NOT NULL DEFAULT 0`,
+		`reduce_before_settle_ratio FLOAT NOT NULL DEFAULT 0`,
+		`add_market_ratio FLOAT NOT NULL DEFAULT 0`,
+		`avg_adds_per_market FLOAT NOT NULL DEFAULT 0`,
+		`price_band_market_count INT NOT NULL DEFAULT 0`,
+		`price_band_win_count INT NOT NULL DEFAULT 0`,
+		`price_band_loss_count INT NOT NULL DEFAULT 0`,
+		`price_band_win_rate FLOAT NOT NULL DEFAULT 0`,
+		`price_band_win_rate_wilson FLOAT NOT NULL DEFAULT 0`,
+		`price_band_roi_pct FLOAT NOT NULL DEFAULT 0`,
+		`price_band_net_pnl_usd FLOAT NOT NULL DEFAULT 0`,
+		`price_band_volume_usd FLOAT NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.sql.ExecContext(ctx,
 			`ALTER TABLE crypto_wallet_candidates ADD COLUMN IF NOT EXISTS `+col); err != nil {
@@ -107,6 +142,14 @@ func (db *DB) MigrateCryptoFinder(ctx context.Context) error {
 	if _, err := db.sql.ExecContext(ctx,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_candidates_pnl ON crypto_wallet_candidates (net_pnl_usd DESC)`); err != nil {
 		return fmt.Errorf("index pnl: %w", err)
+	}
+	if _, err := db.sql.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_candidates_market_w95 ON crypto_wallet_candidates (market_win_rate_wilson DESC)`); err != nil {
+		return fmt.Errorf("index market w95: %w", err)
+	}
+	if _, err := db.sql.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_candidates_price_band_roi ON crypto_wallet_candidates (price_band_roi_pct DESC)`); err != nil {
+		return fmt.Errorf("index price band roi: %w", err)
 	}
 	if _, err := db.sql.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS crypto_finder_runs (
@@ -142,11 +185,19 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 		  (address, total_trades, win_count, lose_count, win_rate, roi_pct, net_pnl_usd, volume_usd, last_trade_at, evaluated_at,
 		   total_trades_24h, win_count_24h, lose_count_24h, win_rate_24h, roi_pct_24h, net_pnl_usd_24h, volume_usd_24h,
 		   avg_win_usd, avg_loss_usd, profit_loss_ratio, max_drawdown_usd, crypto_ratio, wash_ratio, wash_count,
-		   avg_buy_price, extreme_price_ratio, avg_buy_offset_sec, dual_market_ratio, hold_to_settle_ratio)
+		   avg_buy_price, extreme_price_ratio, avg_buy_offset_sec, dual_market_ratio, hold_to_settle_ratio,
+		   settled_market_count, market_win_count, market_loss_count, market_win_rate, market_win_rate_wilson,
+		   no_reduce_ratio, reduce_before_settle_ratio, add_market_ratio, avg_adds_per_market,
+		   price_band_market_count, price_band_win_count, price_band_loss_count, price_band_win_rate,
+		   price_band_win_rate_wilson, price_band_roi_pct, price_band_net_pnl_usd, price_band_volume_usd)
 		VALUES (LOWER($1), $2, $3, $4, $5, $6, $7, $8, $9, NOW(),
 		        $10, $11, $12, $13, $14, $15, $16,
 		        $17, $18, $19, $20, $21, $22, $23,
-		        $24, $25, $26, $27, $28)
+		        $24, $25, $26, $27, $28,
+		        $29, $30, $31, $32, $33,
+		        $34, $35, $36, $37,
+		        $38, $39, $40, $41,
+		        $42, $43, $44, $45)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
@@ -167,6 +218,13 @@ func (db *DB) ReplaceCryptoCandidates(ctx context.Context, items []CryptoWalletC
 			it.CryptoRatio, it.WashRatio, it.WashCount,
 			it.AvgBuyPrice, it.ExtremePriceRatio, it.AvgBuyOffsetSec,
 			it.DualMarketRatio, it.HoldToSettleRatio,
+			it.SettledMarketCount, it.MarketWinCount, it.MarketLossCount,
+			it.MarketWinRate, it.MarketWinRateWilson,
+			it.NoReduceRatio, it.ReduceBeforeSettleRatio,
+			it.AddMarketRatio, it.AvgAddsPerMarket,
+			it.PriceBandMarketCount, it.PriceBandWinCount, it.PriceBandLossCount,
+			it.PriceBandWinRate, it.PriceBandWinRateWilson,
+			it.PriceBandROIPct, it.PriceBandNetPnLUSD, it.PriceBandVolumeUSD,
 		); err != nil {
 			return fmt.Errorf("insert %s: %w", it.Address, err)
 		}

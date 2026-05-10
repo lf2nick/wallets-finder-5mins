@@ -14,7 +14,14 @@ type SortKey =
   | "total_trades"
   | "hold_to_settle_ratio"
   | "dual_market_ratio"
-  | "crypto_ratio";
+  | "crypto_ratio"
+  | "settled_market_count"
+  | "market_win_rate_wilson"
+  | "no_reduce_ratio"
+  | "add_market_ratio"
+  | "price_band_market_count"
+  | "price_band_win_rate_wilson"
+  | "price_band_roi_pct";
 
 type Toast = { msg: string; kind: "success" | "error"; id: number } | null;
 
@@ -24,7 +31,7 @@ export default function App() {
   const [items, setItems] = useState<Candidate[]>([]);
   const [matchCount, setMatchCount] = useState(0);
   const [poolSize, setPoolSize] = useState(0);
-  const [sortBy, setSortBy] = useState<SortKey>("net_pnl_usd");
+  const [sortBy, setSortBy] = useState<SortKey>("market_win_rate_wilson");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const [walletForHistory, setWalletForHistory] = useState<string | undefined>();
@@ -46,6 +53,11 @@ export default function App() {
         crypto_ratio_min: cfg.crypto_ratio_min ?? 80,
         hold_to_settle_ratio_min: cfg.hold_to_settle_ratio_min ?? 80,
         min_trades: cfg.min_trades ?? 30,
+        settled_markets_min: cfg.settled_markets_min ?? 100,
+        market_wilson_min: cfg.market_wilson_min ?? 52,
+        no_reduce_ratio_min: cfg.no_reduce_ratio_min ?? 95,
+        price_band_markets_min: cfg.price_band_markets_min ?? 30,
+        price_band_roi_min: cfg.price_band_roi_min ?? 0,
       };
       setFilter(fv);
       const d = await api.getCandidates({ sort: sortBy });

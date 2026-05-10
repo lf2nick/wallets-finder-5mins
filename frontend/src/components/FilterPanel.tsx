@@ -1,4 +1,3 @@
-// FilterPanel — 3 個 ratio + min_trades 設定欄位 + 儲存 / 立即 scan
 import { useEffect, useState } from "react";
 
 export type FilterValues = {
@@ -6,40 +5,92 @@ export type FilterValues = {
   crypto_ratio_min: number;
   hold_to_settle_ratio_min: number;
   min_trades: number;
+  settled_markets_min: number;
+  market_wilson_min: number;
+  no_reduce_ratio_min: number;
+  price_band_markets_min: number;
+  price_band_roi_min: number;
 };
 
-const FIELDS: { key: keyof FilterValues; label: string; tip: string; min: number; max: number; step: number }[] = [
+const FIELDS: {
+  key: keyof FilterValues;
+  label: string;
+  tip: string;
+  min: number;
+  max: number;
+  step: number;
+}[] = [
   {
     key: "dual_market_ratio_max",
-    label: "雙向持倉 ≤ (%)",
-    tip: "同一個 market 同時押 Up 和 Down 的比例上限。低 = 不對沖",
+    label: "雙向上限 %",
+    tip: "同市場同時買 Up 與 Down 的市場比例；越低越像純方向預測。",
     min: 0,
     max: 100,
     step: 1,
   },
   {
     key: "crypto_ratio_min",
-    label: "5min 比例 ≥ (%)",
-    tip: "5min crypto 活動 / 全部活動 × 100。高 = 專攻 5min 加密",
+    label: "5m 佔比 %",
+    tip: "5 分鐘 crypto 活動佔總活動比例；越高越專注。",
     min: 0,
     max: 100,
     step: 1,
   },
   {
     key: "hold_to_settle_ratio_min",
-    label: "Hold 結算 ≥ (%)",
-    tip: "hold 到結算的市場 / 已結算市場 × 100。高 = directional trader",
+    label: "Hold %",
+    tip: "沒有在結算前整筆退出的市場比例。",
+    min: 0,
+    max: 100,
+    step: 1,
+  },
+  {
+    key: "no_reduce_ratio_min",
+    label: "不減倉 %",
+    tip: "結算前沒有任何 SELL/減倉的市場比例，比 Hold 更嚴格。",
     min: 0,
     max: 100,
     step: 1,
   },
   {
     key: "min_trades",
-    label: "最少筆數",
-    tip: "total_trades ≥ 此值。樣本太小不可信",
+    label: "最少交易",
+    tip: "BUY 交易筆數下限；保留舊指標，方便和原本結果對照。",
     min: 1,
     max: 10000,
     step: 1,
+  },
+  {
+    key: "settled_markets_min",
+    label: "最少市場",
+    tip: "已結算 5m 市場數下限；用市場數避免加倉把勝率灌水。",
+    min: 1,
+    max: 10000,
+    step: 1,
+  },
+  {
+    key: "market_wilson_min",
+    label: "市場 W95 %",
+    tip: "市場級勝率 Wilson 95% 下界；比 raw 勝率更保守。",
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
+  {
+    key: "price_band_markets_min",
+    label: "價格帶市場",
+    tip: "平均買價落在 0.3~0.7 的已結算市場數。",
+    min: 0,
+    max: 10000,
+    step: 1,
+  },
+  {
+    key: "price_band_roi_min",
+    label: "價格帶 ROI %",
+    tip: "只看 0.3~0.7 價格帶市場的 ROI；用來確認我們可跟價格仍是正期望。",
+    min: -1000,
+    max: 1000,
+    step: 0.1,
   },
 ];
 
@@ -66,7 +117,7 @@ export function FilterPanel({ initial, onSave, onScan, busy }: Props) {
 
   return (
     <div className="card">
-      <div className="card-title">📊 Filter 設定</div>
+      <div className="card-title">Filter 設定</div>
       <div className="filter-row">
         {FIELDS.map((f) => (
           <label key={f.key} title={f.tip}>
@@ -90,10 +141,10 @@ export function FilterPanel({ initial, onSave, onScan, busy }: Props) {
               setDirty(false);
             }}
           >
-            💾 儲存
+            儲存
           </button>
           <button disabled={busy} onClick={() => onScan()}>
-            🔍 立即掃描
+            建立 snapshot
           </button>
         </div>
       </div>
